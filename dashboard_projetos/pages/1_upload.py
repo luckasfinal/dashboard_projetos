@@ -1,4 +1,9 @@
-import pages._pathfix  # garante sys.path antes de qualquer import
+import sys
+from pathlib import Path
+_ROOT = Path(__file__).parent.parent.resolve()
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 import streamlit as st
 import pandas as pd
 from utils.db import (
@@ -18,30 +23,58 @@ st.markdown(
     "Você pode enviar planilhas de meses diferentes sem perder dados anteriores."
 )
 
+# ── Formato esperado ────────────────────────────────────────────────────────
 with st.expander("📋 Ver formato esperado das planilhas"):
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown("**Custos** (xlsx / csv)")
+        st.markdown("**Planilha de Custos** (xlsx / csv)")
         st.dataframe(pd.DataFrame({
-            "projeto":   ["Alpha", "Beta"],
-            "categoria": ["Mão de obra", "Infra"],
-            "valor":     [5000.00, 1200.00],
-            "data":      ["2024-01-01", "2024-01-15"],
-            "orcamento": [20000.00, 5000.00],
-            "status":    ["Em andamento", "Em andamento"],
+            "Data":                   ["01/01/2024 08:00:00"],
+            "Ano":                    ["2024"],
+            "Mês":                    ["Janeiro"],
+            "Filial":                 ["SP01"],
+            "Área":                   ["TI"],
+            "Centro de Custo":        ["CC-1001 Projeto Alpha"],
+            "Conta":                  ["4.1.01 Pessoal"],
+            "Cód. Parceiro Negócio":  ["F-00123"],
+            "Parceiro Negócio":       ["F-00123 Fornecedor X"],
+            "Histórico":              ["NF 4521 Serviços"],
+            "Realizado":              ["5.000,00"],
         }), hide_index=True, use_container_width=True)
+
     with c2:
-        st.markdown("**Horas** (xlsx / csv)")
+        st.markdown("**Planilha de Horas** (xlsx / csv)")
         st.dataframe(pd.DataFrame({
-            "projeto":     ["Alpha", "Beta"],
-            "colaborador": ["Ana Silva", "Carlos Souza"],
-            "horas":       [80, 40],
-            "data":        ["2024-01-01", "2024-01-10"],
-            "tarefa":      ["Desenvolvimento", "Reunião"],
+            "Período":                              ["01/01/2024"],
+            "C.Custo":                              ["1001"],
+            "Ordem Interna":                        ["200001"],
+            "Descrição Ordem Interna":              ["Projeto Alpha"],
+            "Centro de Lucro":                      ["3001"],
+            "Descrição C.Lucro":                    ["Software"],
+            "Matricula":                            ["12345"],
+            "Nome":                                 ["Ana Silva"],
+            "CC Origem":                            ["5001"],
+            "Descrição CC Origem":                  ["Dev Backend"],
+            "Hs Nor":                               ["8"],
+            "Tipo de Projeto":                      ["Interno"],
+            "Cód Produto":                          ["P-001"],
+            "Descrição Produto":                    ["Sistema X"],
+            "CATEGORIA":                            ["Desenvolvimento"],
+            "ATIVIDADE":                            ["Codificação"],
+            "DETALHES":                             ["API REST"],
+            "C.Custo - Descrição Ordem Interna":    ["1001 - Projeto Alpha"],
+            "Matricula - Nome":                     ["12345 - Ana Silva"],
+            "Segmento":                             ["Enterprise"],
         }), hide_index=True, use_container_width=True)
+
+    st.info(
+        "💡 A coluna **Centro de Custo** (custos) e **C.Custo** (horas) são usadas "
+        "como chave de projeto para cruzar as duas planilhas."
+    )
 
 st.divider()
 
+# ── Uploaders ───────────────────────────────────────────────────────────────
 col_l, col_r = st.columns(2)
 with col_l:
     st.subheader("Planilha de Custos")
@@ -52,6 +85,7 @@ with col_r:
 
 st.divider()
 
+# ── Processar ───────────────────────────────────────────────────────────────
 if f_custos is not None or f_horas is not None:
     if st.button("💾 Importar e Salvar no Histórico", type="primary", use_container_width=True):
         avisos, sucessos = [], []
@@ -63,10 +97,12 @@ if f_custos is not None or f_horas is not None:
             erros_c = validar_colunas(df_c, COLUNAS_CUSTOS, "Custos")
             if erros_c:
                 avisos += erros_c
+                with st.expander("🔍 Colunas detectadas na planilha de custos"):
+                    st.write(list(df_c.columns))
             else:
                 linhas, duplicado = salvar_custos(df_c, f_custos.name)
                 if duplicado:
-                    avisos.append(f"'{f_custos.name}' já foi importado antes — ignorado para evitar duplicação.")
+                    avisos.append(f"'{f_custos.name}' já foi importado — ignorado para evitar duplicação.")
                 else:
                     sucessos.append(f"Custos: **{linhas} linhas** de `{f_custos.name}` salvas.")
 
@@ -77,10 +113,12 @@ if f_custos is not None or f_horas is not None:
             erros_h = validar_colunas(df_h, COLUNAS_HORAS, "Horas")
             if erros_h:
                 avisos += erros_h
+                with st.expander("🔍 Colunas detectadas na planilha de horas"):
+                    st.write(list(df_h.columns))
             else:
                 linhas, duplicado = salvar_horas(df_h, f_horas.name)
                 if duplicado:
-                    avisos.append(f"'{f_horas.name}' já foi importado antes — ignorado para evitar duplicação.")
+                    avisos.append(f"'{f_horas.name}' já foi importado — ignorado para evitar duplicação.")
                 else:
                     sucessos.append(f"Horas: **{linhas} linhas** de `{f_horas.name}` salvas.")
 
@@ -97,6 +135,7 @@ else:
 
 st.divider()
 
+# ── Histórico ───────────────────────────────────────────────────────────────
 st.subheader("📁 Histórico de Arquivos Importados")
 df_imp = listar_importacoes()
 
@@ -121,6 +160,7 @@ else:
 
 st.divider()
 
+# ── Reset total ─────────────────────────────────────────────────────────────
 with st.expander("⚠️ Zona de perigo — apagar tudo"):
     st.warning("Esta ação remove **todos** os dados. Não pode ser desfeita.")
     confirmacao = st.text_input("Digite CONFIRMAR para habilitar o botão")
