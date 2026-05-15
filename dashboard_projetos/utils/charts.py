@@ -122,19 +122,19 @@ def grafico_evolucao_mensal(df_custos: pd.DataFrame, df_horas: pd.DataFrame) -> 
 
 
 def gauge_orcamento(projeto: str, pct: float) -> go.Figure:
-    cor = "#e74c3c" if pct >= 90 else "#f39c12" if pct >= 70 else "#2ecc71"
+    cor = "#e74c3c" if pct >= 100 else "#f39c12" if pct >= 85 else "#2ecc71"
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=pct,
         number={"suffix": "%", "font": {"size": 22}},
         title={"text": projeto, "font": {"size": 13}},
         gauge={
-            "axis": {"range": [0, 100], "tickwidth": 1},
+            "axis": {"range": [0, 150], "tickwidth": 1},
             "bar": {"color": cor},
             "steps": [
-                {"range": [0, 70],  "color": "#eafaf1"},
-                {"range": [70, 90], "color": "#fef9e7"},
-                {"range": [90, 100], "color": "#fdedec"},
+                {"range": [0, 85],  "color": "#eafaf1"},
+                {"range": [85, 99], "color": "#fef9e7"},
+                {"range": [99, 150], "color": "#fdedec"},
             ],
             "threshold": {
                 "line": {"color": "red", "width": 3},
