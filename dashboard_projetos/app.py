@@ -1,18 +1,14 @@
 import sys, os
 from pathlib import Path
 
-# ── Adiciona a raiz do projeto ao path de TODAS as formas possíveis ──────────
 ROOT = Path(__file__).resolve().parent
-os.environ["PYTHONPATH"] = str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", "")
 for p in [str(ROOT), str(ROOT / "utils")]:
     if p not in sys.path:
         sys.path.insert(0, p)
+os.environ["PYTHONPATH"] = str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", "")
 
 import streamlit as st
-
-# Inicializa o banco na subida do app
-from utils.db import init_db
-init_db()
+from utils.db import init_db, migrar_db
 
 st.set_page_config(
     page_title="Dashboard de Projetos",
@@ -20,6 +16,10 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# Inicializa e migra banco (cria colunas novas se o banco antigo existir)
+init_db()
+migrar_db()
 
 pages = {
     "📤 Upload de Planilhas": [
