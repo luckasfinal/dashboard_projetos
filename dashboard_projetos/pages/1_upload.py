@@ -40,7 +40,7 @@ with st.expander("📋 Ver formato esperado das planilhas"):
             "Parceiro Negócio":       ["F-00123 Fornecedor X"],
             "Histórico":              ["NF 4521 Serviços"],
             "Realizado":              ["5.000,00"],
-        }), hide_index=True, use_container_width=True)
+        }), hide_index=True, width="stretch")
 
     with c2:
         st.markdown("**Planilha de Horas** (xlsx / csv)")
@@ -65,7 +65,7 @@ with st.expander("📋 Ver formato esperado das planilhas"):
             "C.Custo - Descrição Ordem Interna":    ["1001 - Projeto Alpha"],
             "Matricula - Nome":                     ["12345 - Ana Silva"],
             "Segmento":                             ["Enterprise"],
-        }), hide_index=True, use_container_width=True)
+        }), hide_index=True, width="stretch")
 
     st.info(
         "💡 A coluna **Centro de Custo** (custos) e **C.Custo** (horas) são usadas "
@@ -87,7 +87,7 @@ st.divider()
 
 # ── Processar ───────────────────────────────────────────────────────────────
 if f_custos is not None or f_horas is not None:
-    if st.button("💾 Importar e Salvar no Histórico", type="primary", use_container_width=True):
+    if st.button("💾 Importar e Salvar no Histórico", type="primary", width="stretch"):
         avisos, sucessos = [], []
 
         if f_custos:
@@ -145,7 +145,7 @@ else:
     exibe = df_imp.copy()
     exibe.columns = ["Tipo", "Arquivo", "Importado em", "Linhas"]
     exibe["Tipo"] = exibe["Tipo"].map({"custos": "💰 Custos", "horas": "⏱️ Horas"})
-    st.dataframe(exibe, use_container_width=True, hide_index=True)
+    st.dataframe(exibe, width="stretch", hide_index=True)
 
     st.markdown("**Remover um arquivo do histórico:**")
     opcoes = [f"{r['tipo']}|{r['arquivo']}" for _, r in df_imp.iterrows()]

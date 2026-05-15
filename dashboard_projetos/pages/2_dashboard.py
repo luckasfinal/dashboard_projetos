@@ -79,20 +79,20 @@ st.divider()
 # ── Gráficos ──────────────────────────────────────────────────────────────────
 col1, col2 = st.columns(2)
 with col1:
-    st.plotly_chart(charts.grafico_realizado_por_projeto(df_f), use_container_width=True)
+    st.plotly_chart(charts.grafico_realizado_por_projeto(df_f), width="stretch")
 with col2:
-    st.plotly_chart(charts.grafico_horas_por_projeto(df_f), use_container_width=True)
+    st.plotly_chart(charts.grafico_horas_por_projeto(df_f), width="stretch")
 
 col3, col4 = st.columns(2)
 with col3:
-    st.plotly_chart(charts.grafico_custo_por_hora(df_f), use_container_width=True)
+    st.plotly_chart(charts.grafico_custo_por_hora(df_f), width="stretch")
 with col4:
     if not df_c_f.empty and "conta" in df_c_f.columns:
-        st.plotly_chart(charts.grafico_pizza_conta(df_c_f), use_container_width=True)
+        st.plotly_chart(charts.grafico_pizza_conta(df_c_f), width="stretch")
 
 if not df_c_f.empty and mes_col:
     st.subheader("Evolução Mensal")
-    st.plotly_chart(charts.grafico_evolucao_mensal(df_c_f, df_h_f, mes_col), use_container_width=True)
+    st.plotly_chart(charts.grafico_evolucao_mensal(df_c_f, df_h_f, mes_col), width="stretch")
 
 st.divider()
 
@@ -129,7 +129,7 @@ def colorir_realizado(val):
 
 st.dataframe(
     tabela.style.format(fmt),
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
 )
 

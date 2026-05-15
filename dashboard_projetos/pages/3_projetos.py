@@ -46,7 +46,7 @@ if not tem_orcamento:
         "Por ora, é exibido o realizado absoluto por projeto."
     )
     # Mostra barras de realizado no lugar dos gauges
-    st.plotly_chart(charts.grafico_realizado_por_projeto(df_f), use_container_width=True)
+    st.plotly_chart(charts.grafico_realizado_por_projeto(df_f), width="stretch")
 else:
     n = len(df_f)
     cols = st.columns(min(n, 4)) if n > 0 else st.columns(1)
@@ -54,7 +54,7 @@ else:
         with cols[i % len(cols)]:
             st.plotly_chart(
                 charts.gauge_orcamento(row["projeto"], row["pct_orcamento"]),
-                use_container_width=True,
+                width="stretch",
             )
 
 st.divider()
@@ -98,7 +98,7 @@ for _, row in df_f.iterrows():
             if not df_h_proj.empty and "nome" in df_h_proj.columns:
                 st.plotly_chart(
                     charts.grafico_horas_colaborador(df_h_proj, row["projeto"]),
-                    use_container_width=True,
+                    width="stretch",
                 )
 
 st.divider()
@@ -159,4 +159,4 @@ styler = tabela.style.format(fmt)
 if "% Orçamento" in tabela.columns:
     styler = styler.applymap(colorir_pct, subset=["% Orçamento"])
 
-st.dataframe(styler, use_container_width=True, hide_index=True)
+st.dataframe(styler, width="stretch", hide_index=True)
