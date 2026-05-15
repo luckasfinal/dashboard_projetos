@@ -129,15 +129,20 @@ def _remover_acentos(s: str) -> str:
     )
 
 
-def _normalizar_header(col: str) -> str:
+def _normalizar_header(col) -> str:
     """Remove acentos, caixa baixa, strip — para comparação com o mapa."""
-    return _remover_acentos(col.strip().lower())
+    return _remover_acentos(str(col).strip().lower())
 
 
 def ler_planilha_bytes(conteudo: bytes, nome: str) -> pd.DataFrame:
+    """Lê o arquivo e força os nomes de colunas para string (evita datetime em headers)."""
     if nome.lower().endswith(".csv"):
-        return pd.read_csv(io.BytesIO(conteudo), sep=None, engine="python")
-    return pd.read_excel(io.BytesIO(conteudo))
+        df = pd.read_csv(io.BytesIO(conteudo), sep=None, engine="python")
+    else:
+        df = pd.read_excel(io.BytesIO(conteudo))
+    # Garante que TODOS os nomes de colunas são string pura
+    df.columns = [str(c) for c in df.columns]
+    return df
 
 
 def _aplicar_mapa(df: pd.DataFrame, mapa: dict) -> pd.DataFrame:
