@@ -122,7 +122,15 @@ COLUNAS_HORAS = {
 # Helpers de leitura e normalização
 # ─────────────────────────────────────────────
 
+def _clean_string(s: str) -> str:
+    """Remove caracteres invisíveis (como BOM), espaços nulos e formatações indesejadas."""
+    # Remove BOM e caracteres de controle invisíveis
+    s = s.replace("\ufeff", "").replace("\u200b", "").strip()
+    return s
+
+
 def _remover_acentos(s: str) -> str:
+    s = _clean_string(s)
     return "".join(
         c for c in unicodedata.normalize("NFD", s)
         if unicodedata.category(c) != "Mn"
@@ -130,25 +138,22 @@ def _remover_acentos(s: str) -> str:
 
 
 def _normalizar_header(col) -> str:
-    """Remove acentos, caixa baixa, strip e caracteres invisíveis de BOM."""
-    s = str(col).strip().lower()
-    # Remove o caractere invisível de BOM se existir
-    if s.startswith("\ufeff"):
-        s = s.replace("\ufeff", "")
+    """Remove acentos, caixa baixa, strip e caracteres invisíveis."""
+    s = _clean_string(str(col)).lower()
     return _remover_acentos(s)
 
 
 def ler_planilha_bytes(conteudo: bytes, nome: str) -> pd.DataFrame:
-    """Lê o arquivo tratando hífens, ponto-e-vírgula e a codificação UTF-8 com BOM."""
+    """Lê o arquivo aplicando limpeza rígida de codificação e separadores."""
     if nome.lower().endswith(".csv"):
-        # CORREÇÃO: decoding manual com 'utf-8-sig' para eliminar o caractere invisível BOM (\ufeff)
+        # Garante a decodificação correta removendo assinaturas indesejadas
         texto = conteudo.decode("utf-8-sig", errors="ignore")
         df = pd.read_csv(io.StringIO(texto), sep=";", engine="python")
     else:
         df = pd.read_excel(io.BytesIO(conteudo))
         
-    # Garante que TODOS os nomes de colunas são string pura e limpa
-    df.columns = [str(c).strip().replace("\ufeff", "") for c in df.columns]
+    # Limpeza forçada em todas as colunas lidas do arquivo original
+    df.columns = [_clean_string(str(c)) for c in df.columns]
     return df
 
 
@@ -160,8 +165,9 @@ def _aplicar_mapa(df: pd.DataFrame, mapa: dict) -> pd.DataFrame:
         if chave in mapa:
             rename[col] = mapa[chave]
         else:
-            # Fallback inteligente individual apenas para colunas fora do mapa
-            rename[col] = _remover_acentos(col).strip().lower().replace(" ", "_").replace(".", "_").replace("-", "_")
+            # Fallback limpo individual apenas para colunas fora do mapa
+            nome_limpo = _remover_acentos(col).lower().replace(" ", "_").replace(".", "_").replace("-", "_")
+            rename[col] = _clean_string(nome_limpo)
     return df.rename(columns=rename)
 
 
@@ -198,7 +204,10 @@ def preparar_horas(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def validar_colunas(df: pd.DataFrame, esperadas: dict, nome: str) -> list[str]:
-    faltando = [c for c in esperadas if c not in df.columns]
+    # Garante que a validação final use strings 100% limpas para comparar
+    colunas_df_limpas = [_clean_string(str(c)) for c in df.columns]
+    
+    faltando = [c for c in esperadas if _clean_string(c) not in colunas_df_limpas]
     if faltando:
         return [f"**{nome}** — colunas ausentes após mapeamento: `{', '.join(faltando)}`"]
     return []
