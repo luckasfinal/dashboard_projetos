@@ -1,7 +1,6 @@
 import sys
 from pathlib import Path
 from datetime import datetime
-
 _ROOT = Path(__file__).parent.parent.resolve()
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -15,45 +14,82 @@ from utils import charts
 init_db()
 st.title("📈 Andamento dos Projetos")
 
-# 1. Carrega os dados processados e consolidados do banco
 df, df_custos_raw, df_horas_raw = agregar_tudo()
 
 if df.empty:
     st.warning("⚠️ Nenhum dado encontrado. Acesse **Upload de Planilhas** e importe seus arquivos.")
     st.stop()
 
+# ── Opções disponíveis ────────────────────────────────────────────────────────
+lista_projetos = sorted(df["nome_projeto"].dropna().unique().tolist())
+
+lista_anos = (
+    sorted(df_custos_raw["ano"].dropna().astype(str).unique().tolist())
+    if "ano" in df_custos_raw.columns else []
+)
+lista_meses = (
+    sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolist())
+    if "mes" in df_custos_raw.columns else []
+)
+
+# ── Inicializa session_state — mesmas chaves de 2_dashboard.py ────────────────
+if "filtro_projetos" not in st.session_state:
+    st.session_state["filtro_projetos"] = lista_projetos
+if "filtro_anos" not in st.session_state:
+    st.session_state["filtro_anos"] = lista_anos
+if "filtro_meses" not in st.session_state:
+    st.session_state["filtro_meses"] = lista_meses
+
+# Garante que valores obsoletos (removidos do banco) não fiquem presos
+st.session_state["filtro_projetos"] = [p for p in st.session_state["filtro_projetos"] if p in lista_projetos]
+st.session_state["filtro_anos"]     = [a for a in st.session_state["filtro_anos"]     if a in lista_anos]
+st.session_state["filtro_meses"]    = [m for m in st.session_state["filtro_meses"]    if m in lista_meses]
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("🔍 Filtros")
 
-    lista_projetos = sorted(df["nome_projeto"].dropna().unique().tolist())
     projetos_selecionados = st.multiselect(
         "Selecione os Projetos:",
         options=lista_projetos,
-        default=lista_projetos
+        default=st.session_state["filtro_projetos"],
+        key="filtro_projetos",
+    )
+    anos_selecionados = st.multiselect(
+        "Selecione os Anos:",
+        options=lista_anos,
+        default=st.session_state["filtro_anos"],
+        key="filtro_anos",
+    )
+    meses_selecionados = st.multiselect(
+        "Selecione os Meses:",
+        options=lista_meses,
+        default=st.session_state["filtro_meses"],
+        key="filtro_meses",
     )
 
-    if "ano" in df_custos_raw.columns:
-        lista_anos = sorted(df_custos_raw["ano"].dropna().astype(str).unique().tolist())
-    else:
-        lista_anos = []
-    anos_selecionados = st.multiselect("Selecione os Anos:",  options=lista_anos,  default=lista_anos)
+    if st.button("🔄 Limpar filtros", use_container_width=True):
+        st.session_state["filtro_projetos"] = lista_projetos
+        st.session_state["filtro_anos"]     = lista_anos
+        st.session_state["filtro_meses"]    = lista_meses
+        st.rerun()
 
-    if "mes" in df_custos_raw.columns:
-        lista_meses = sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolist())
-    else:
-        lista_meses = []
-    meses_selecionados = st.multiselect("Selecione os Meses:", options=lista_meses, default=lista_meses)
-
-# ── Filtros ────────────────────────────────────────────────────────────────────
+# ── Aplicação dos filtros ─────────────────────────────────────────────────────
 df_filtrado = df.copy()
+
 if projetos_selecionados:
     df_filtrado = df_filtrado[df_filtrado["nome_projeto"].isin(projetos_selecionados)]
+
 if anos_selecionados and "ano" in df_custos_raw.columns:
-    projetos_nos_anos = df_custos_raw[df_custos_raw["ano"].astype(str).isin(anos_selecionados)]["centro_de_custo"].unique()
+    projetos_nos_anos = df_custos_raw[
+        df_custos_raw["ano"].astype(str).isin(anos_selecionados)
+    ]["centro_de_custo"].unique()
     df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_nos_anos)]
+
 if meses_selecionados and "mes" in df_custos_raw.columns:
-    projetos_nos_meses = df_custos_raw[df_custos_raw["mes"].astype(str).isin(meses_selecionados)]["centro_de_custo"].unique()
+    projetos_nos_meses = df_custos_raw[
+        df_custos_raw["mes"].astype(str).isin(meses_selecionados)
+    ]["centro_de_custo"].unique()
     df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_nos_meses)]
 
 df_f = df_filtrado
@@ -68,8 +104,7 @@ else:
     if not tem_orcamento:
         st.info(
             "ℹ️ Nenhum orçamento cadastrado ainda. "
-            "Acesse **Orçamentos** para informar os valores previstos. "
-            "Por ora, é exibido o realizado absoluto por projeto."
+            "Acesse **Orçamentos** para informar os valores previstos."
         )
         st.plotly_chart(charts.grafico_realizado_por_projeto(df_f), width="stretch")
     else:
@@ -87,7 +122,6 @@ st.divider()
 # ── Cards por centro de custo ─────────────────────────────────────────────────
 st.subheader("Detalhamento por Centro de Custo")
 
-# Nomes das colunas de data disponíveis no merged
 COLS_DATAS = {
     "data_inicio":             "Início (abertura CC)",
     "prev_viabilidade":        "Prev. Viabilidade",
@@ -109,17 +143,14 @@ def _fmt_data(val) -> str:
         return str(val)
 
 def _atraso(prev, real) -> str:
-    """Retorna indicador visual de atraso/adiantamento."""
-    if not prev or not real or str(prev) in ("0", "None") or str(real) in ("0", "None"):
+    if not prev or not real or str(prev) in ("0","None","") or str(real) in ("0","None",""):
         return ""
     try:
         dp = datetime.strptime(str(prev)[:10], "%Y-%m-%d")
         dr = datetime.strptime(str(real)[:10], "%Y-%m-%d")
         diff = (dr - dp).days
-        if diff > 0:
-            return f" 🔴 +{diff}d"
-        if diff < 0:
-            return f" 🟢 {diff}d"
+        if diff > 0:  return f" 🔴 +{diff}d"
+        if diff < 0:  return f" 🟢 {abs(diff)}d adiantado"
         return " ✅ no prazo"
     except Exception:
         return ""
@@ -132,11 +163,8 @@ for _, row in df_f.iterrows():
         if v and str(v) != "0":
             label_extra += f" · {v}"
 
-    titulo_expander = f"{semaforo} **{row['projeto']}** — {row['nome_projeto']}{label_extra}"
+    with st.expander(f"{semaforo} **{row['projeto']}** — {row['nome_projeto']}{label_extra}", expanded=False):
 
-    with st.expander(titulo_expander, expanded=False):
-
-        # ── Métricas financeiras ──────────────────────────────────────────────
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Realizado",    formata_brl(row["valor_total"]))
         c2.metric("Orçamento",    formata_brl(row["orcamento"]) if row["orcamento"] > 0 else "N/D")
@@ -145,8 +173,7 @@ for _, row in df_f.iterrows():
 
         if row["orcamento"] > 0:
             pct = row["pct_orcamento"]
-            label_pct = f"{'🚨 ESTOURO — ' if pct > 100 else ''}{pct:.1f}% do orçamento consumido"
-            st.markdown(f"**{label_pct}**")
+            st.markdown(f"**{'🚨 ESTOURO — ' if pct > 100 else ''}{pct:.1f}% do orçamento consumido**")
             st.progress(min(pct / 100, 1.0))
             if pct > 100:
                 st.error(f"⚠️ Estouro de {formata_brl(abs(row['saldo_orcamento']))} acima do orçamento!")
@@ -158,41 +185,36 @@ for _, row in df_f.iterrows():
             f"**Equipe:** {row.get('colaboradores', 'N/D')}"
         )
 
-        # ── Cronograma / Milestones ───────────────────────────────────────────
+        # Cronograma de marcos
         colunas_datas_presentes = [c for c in COLS_DATAS if c in row.index]
         tem_alguma_data = any(
-            row.get(c) and str(row.get(c)) not in ("0", "None", "nan")
+            row.get(c) and str(row.get(c)) not in ("0","None","nan")
             for c in colunas_datas_presentes
         )
 
         if tem_alguma_data:
             st.markdown("#### 📅 Cronograma de Marcos")
-
-            marcos_rows = []
             pares = [
-                ("Início (abertura CC)",          "data_inicio",           None),
-                ("Aprovação da Viabilidade",       "prev_viabilidade",      "real_viabilidade"),
-                ("Critérios de Qualidade",         "prev_qualidade",        "real_qualidade"),
-                ("Aprovação para Lançamento",      "prev_aprov_lancamento", "real_aprov_lancamento"),
-                ("LANÇAMENTO",                     "prev_lancamento",       "real_lancamento"),
+                ("Início (abertura CC)",     "data_inicio",           None),
+                ("Aprovação da Viabilidade", "prev_viabilidade",      "real_viabilidade"),
+                ("Critérios de Qualidade",   "prev_qualidade",        "real_qualidade"),
+                ("Aprov. para Lançamento",   "prev_aprov_lancamento", "real_aprov_lancamento"),
+                ("LANÇAMENTO",               "prev_lancamento",       "real_lancamento"),
             ]
-
+            marcos_rows = []
             for nome_marco, col_prev, col_real in pares:
                 prev_val = row.get(col_prev) if col_prev else None
                 real_val = row.get(col_real) if col_real else None
                 indicador = _atraso(prev_val, real_val) if col_real else ""
                 marcos_rows.append({
-                    "Marco":      nome_marco,
-                    "Previsto":   _fmt_data(prev_val),
-                    "Realizado":  _fmt_data(real_val) + indicador if col_real else "—",
+                    "Marco":     nome_marco,
+                    "Previsto":  _fmt_data(prev_val),
+                    "Realizado": (_fmt_data(real_val) + indicador) if col_real else "—",
                 })
-
-            df_marcos = pd.DataFrame(marcos_rows)
-            st.dataframe(df_marcos, use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(marcos_rows), use_container_width=True, hide_index=True)
         else:
-            st.caption("ℹ️ Nenhum dado de cronograma cadastrado. Acesse **Orçamentos** para informar.")
+            st.caption("ℹ️ Sem dados de cronograma. Acesse **Orçamentos** para informar.")
 
-        # ── Gráfico de horas por colaborador ─────────────────────────────────
         if not df_horas_raw.empty and "c_custo" in df_horas_raw.columns:
             df_h_proj = df_horas_raw[df_horas_raw["c_custo"] == row["projeto"]]
             if not df_h_proj.empty and "nome" in df_h_proj.columns:
@@ -213,8 +235,6 @@ if not df_f.empty:
     for c in ["filial", "area", "segmento"]:
         if c in df_f.columns:
             cols_disp.append(c)
-
-    # Colunas de datas de lançamento (se existirem)
     for col_data in ["data_inicio", "prev_lancamento", "real_lancamento"]:
         if col_data in df_f.columns:
             cols_disp.append(col_data)
@@ -224,7 +244,7 @@ if not df_f.empty:
     if "pct_orcamento" in tabela.columns:
         tabela.insert(0, "🚦", tabela["pct_orcamento"].apply(cor_status))
 
-    rename_map = {
+    tabela.rename(columns={
         "projeto":              "Centro de Custo",
         "valor_total":          "Realizado (R$)",
         "horas_total":          "Horas",
@@ -238,19 +258,13 @@ if not df_f.empty:
         "data_inicio":          "Início CC",
         "prev_lancamento":      "Lançamento Prev.",
         "real_lancamento":      "Lançamento Real.",
-    }
-    tabela.rename(columns=rename_map, inplace=True)
+    }, inplace=True)
 
-    # Formata datas para exibição
     for col_data in ["Início CC", "Lançamento Prev.", "Lançamento Real."]:
         if col_data in tabela.columns:
             tabela[col_data] = tabela[col_data].apply(_fmt_data)
 
-    fmt = {
-        "Realizado (R$)":  "R$ {:,.2f}",
-        "Horas":           "{:.0f}",
-        "R$/h":            "R$ {:.2f}",
-    }
+    fmt = {"Realizado (R$)": "R$ {:,.2f}", "Horas": "{:.0f}", "R$/h": "R$ {:.2f}"}
     if "Orçamento (R$)" in tabela.columns:
         fmt["Orçamento (R$)"]  = "R$ {:,.2f}"
         fmt["Saldo (R$)"]      = "R$ {:,.2f}"
@@ -258,16 +272,13 @@ if not df_f.empty:
 
     def colorir_pct(val):
         try:
-            v = float(str(val).replace("%", "").replace(",", ".").strip())
+            v = float(str(val).replace("%","").replace(",",".").strip())
         except Exception:
             return ""
-        if v > 100:
-            return "background-color: #c0392b; color: white"
-        if v >= 90:
-            return "background-color: #ffd6d6; color: #7a0000"
-        if v >= 70:
-            return "background-color: #fff3cd; color: #664d00"
-        return "background-color: #d4edda; color: #155724"
+        if v > 100: return "background-color:#c0392b;color:white"
+        if v >= 90: return "background-color:#ffd6d6;color:#7a0000"
+        if v >= 70: return "background-color:#fff3cd;color:#664d00"
+        return "background-color:#d4edda;color:#155724"
 
     styler = tabela.style.format(fmt)
     if "% Orçamento" in tabela.columns:
