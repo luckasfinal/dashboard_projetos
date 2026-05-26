@@ -119,6 +119,67 @@ else:
 
 st.divider()
 
+# ── Tabela de andamento ───────────────────────────────────────────────────────
+st.subheader("Tabela de Andamento")
+
+if not df_f.empty:
+    cols_disp = ["projeto", "valor_total", "horas_total", "custo_por_hora"]
+    if (df_f["orcamento"] > 0).any():
+        cols_disp += ["orcamento", "saldo_orcamento", "pct_orcamento"]
+    for c in ["filial", "area", "segmento"]:
+        if c in df_f.columns:
+            cols_disp.append(c)
+    for col_data in ["data_inicio", "prev_lancamento", "real_lancamento"]:
+        if col_data in df_f.columns:
+            cols_disp.append(col_data)
+
+    tabela = df_f[cols_disp].copy()
+
+    if "pct_orcamento" in tabela.columns:
+        tabela.insert(0, "🚦", tabela["pct_orcamento"].apply(cor_status))
+
+    tabela.rename(columns={
+        "projeto":              "Centro de Custo",
+        "valor_total":          "Realizado (R$)",
+        "horas_total":          "Horas",
+        "custo_por_hora":       "R$/h",
+        "orcamento":            "Orçamento (R$)",
+        "saldo_orcamento":      "Saldo (R$)",
+        "pct_orcamento":        "% Orçamento",
+        "filial":               "Filial",
+        "area":                 "Área",
+        "segmento":             "Segmento",
+        "data_inicio":          "Início CC",
+        "prev_lancamento":      "Lançamento Prev.",
+        "real_lancamento":      "Lançamento Real.",
+    }, inplace=True)
+
+    for col_data in ["Início CC", "Lançamento Prev.", "Lançamento Real."]:
+        if col_data in tabela.columns:
+            tabela[col_data] = tabela[col_data].apply(_fmt_data)
+
+    fmt = {"Realizado (R$)": "R$ {:,.2f}", "Horas": "{:.0f}", "R$/h": "R$ {:.2f}"}
+    if "Orçamento (R$)" in tabela.columns:
+        fmt["Orçamento (R$)"]  = "R$ {:,.2f}"
+        fmt["Saldo (R$)"]      = "R$ {:,.2f}"
+        fmt["% Orçamento"]     = "{:.1f}%"
+
+    def colorir_pct(val):
+        try:
+            v = float(str(val).replace("%","").replace(",",".").strip())
+        except Exception:
+            return ""
+        if v > 100: return "background-color:#c0392b;color:white"
+        if v >= 90: return "background-color:#ffd6d6;color:#7a0000"
+        if v >= 70: return "background-color:#fff3cd;color:#664d00"
+        return "background-color:#d4edda;color:#155724"
+
+    styler = tabela.style.format(fmt)
+    if "% Orçamento" in tabela.columns:
+        styler = styler.map(colorir_pct, subset=["% Orçamento"])
+
+    st.dataframe(styler, width="stretch", hide_index=True)
+
 # ── Cards por centro de custo ─────────────────────────────────────────────────
 st.subheader("Detalhamento por Centro de Custo")
 
@@ -224,64 +285,3 @@ for _, row in df_f.iterrows():
                 )
 
 st.divider()
-
-# ── Tabela de andamento ───────────────────────────────────────────────────────
-st.subheader("Tabela de Andamento")
-
-if not df_f.empty:
-    cols_disp = ["projeto", "valor_total", "horas_total", "custo_por_hora"]
-    if (df_f["orcamento"] > 0).any():
-        cols_disp += ["orcamento", "saldo_orcamento", "pct_orcamento"]
-    for c in ["filial", "area", "segmento"]:
-        if c in df_f.columns:
-            cols_disp.append(c)
-    for col_data in ["data_inicio", "prev_lancamento", "real_lancamento"]:
-        if col_data in df_f.columns:
-            cols_disp.append(col_data)
-
-    tabela = df_f[cols_disp].copy()
-
-    if "pct_orcamento" in tabela.columns:
-        tabela.insert(0, "🚦", tabela["pct_orcamento"].apply(cor_status))
-
-    tabela.rename(columns={
-        "projeto":              "Centro de Custo",
-        "valor_total":          "Realizado (R$)",
-        "horas_total":          "Horas",
-        "custo_por_hora":       "R$/h",
-        "orcamento":            "Orçamento (R$)",
-        "saldo_orcamento":      "Saldo (R$)",
-        "pct_orcamento":        "% Orçamento",
-        "filial":               "Filial",
-        "area":                 "Área",
-        "segmento":             "Segmento",
-        "data_inicio":          "Início CC",
-        "prev_lancamento":      "Lançamento Prev.",
-        "real_lancamento":      "Lançamento Real.",
-    }, inplace=True)
-
-    for col_data in ["Início CC", "Lançamento Prev.", "Lançamento Real."]:
-        if col_data in tabela.columns:
-            tabela[col_data] = tabela[col_data].apply(_fmt_data)
-
-    fmt = {"Realizado (R$)": "R$ {:,.2f}", "Horas": "{:.0f}", "R$/h": "R$ {:.2f}"}
-    if "Orçamento (R$)" in tabela.columns:
-        fmt["Orçamento (R$)"]  = "R$ {:,.2f}"
-        fmt["Saldo (R$)"]      = "R$ {:,.2f}"
-        fmt["% Orçamento"]     = "{:.1f}%"
-
-    def colorir_pct(val):
-        try:
-            v = float(str(val).replace("%","").replace(",",".").strip())
-        except Exception:
-            return ""
-        if v > 100: return "background-color:#c0392b;color:white"
-        if v >= 90: return "background-color:#ffd6d6;color:#7a0000"
-        if v >= 70: return "background-color:#fff3cd;color:#664d00"
-        return "background-color:#d4edda;color:#155724"
-
-    styler = tabela.style.format(fmt)
-    if "% Orçamento" in tabela.columns:
-        styler = styler.map(colorir_pct, subset=["% Orçamento"])
-
-    st.dataframe(styler, width="stretch", hide_index=True)
