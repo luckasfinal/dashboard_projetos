@@ -12,73 +12,107 @@ from utils import charts
 init_db()
 st.title("📊 Dashboard Financeiro")
 
-# 1. Carrega os dados processados e consolidados do banco
 df_dashboard, df_custos_raw, df_horas_raw = agregar_tudo()
 
 if df_dashboard.empty:
     st.warning("⚠️ Nenhum dado encontrado. Acesse **Upload de Planilhas** e importe seus arquivos.")
     st.stop()
 
-# ── Sidebar (Filtros em Linhas e Multi-seleção) ───────────────────────────────
+# ── Opções disponíveis ────────────────────────────────────────────────────────
+lista_projetos = sorted(df_dashboard["nome_projeto"].dropna().unique().tolist())
+
+lista_anos = (
+    sorted(df_custos_raw["ano"].dropna().astype(str).unique().tolist())
+    if "ano" in df_custos_raw.columns else []
+)
+lista_meses = (
+    sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolist())
+    if "mes" in df_custos_raw.columns else []
+)
+
+# ── Inicializa session_state com todos os valores na primeira visita ──────────
+# Chaves compartilhadas com 3_projetos.py para que os filtros persistam entre páginas
+if "filtro_projetos" not in st.session_state:
+    st.session_state["filtro_projetos"] = lista_projetos
+if "filtro_anos" not in st.session_state:
+    st.session_state["filtro_anos"] = lista_anos
+if "filtro_meses" not in st.session_state:
+    st.session_state["filtro_meses"] = lista_meses
+
+# Garante que opções removidas do banco não fiquem presas no state
+st.session_state["filtro_projetos"] = [p for p in st.session_state["filtro_projetos"] if p in lista_projetos]
+st.session_state["filtro_anos"]     = [a for a in st.session_state["filtro_anos"]     if a in lista_anos]
+st.session_state["filtro_meses"]    = [m for m in st.session_state["filtro_meses"]    if m in lista_meses]
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("🔍 Filtros")
-    
-    # Filtro 1: Projeto (Mudado para multiselect em uma linha própria)
-    lista_projetos = sorted(df_dashboard["nome_projeto"].dropna().unique().tolist())
+
     projetos_selecionados = st.multiselect(
-        "Selecione os Projetos:", 
+        "Selecione os Projetos:",
         options=lista_projetos,
-        default=lista_projetos # Vazio por padrão significa que não está filtrando nada (mostra tudo)
+        default=st.session_state["filtro_projetos"],
+        key="filtro_projetos",
     )
-    
-    # Filtro 2: Ano (Em uma linha própria)
-    if "ano" in df_custos_raw.columns:
-        lista_anos = sorted(df_custos_raw["ano"].dropna().astype(str).unique().tolist())
-    else:
-        lista_anos = []
     anos_selecionados = st.multiselect(
-        "Selecione os Anos:", 
+        "Selecione os Anos:",
         options=lista_anos,
-        default=lista_anos
+        default=st.session_state["filtro_anos"],
+        key="filtro_anos",
     )
-    
-    # Filtro 3: Mês (Em uma linha própria)
-    if "mes" in df_custos_raw.columns:
-        lista_meses = sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolist())
-    else:
-        lista_meses = []
     meses_selecionados = st.multiselect(
-        "Selecione os Meses:", 
+        "Selecione os Meses:",
         options=lista_meses,
-        default=lista_meses
+        default=st.session_state["filtro_meses"],
+        key="filtro_meses",
     )
 
-# ── 2. Aplicação dos filtros Multi-seleção (Fora da Sidebar) ──────────────────
+    if st.button("🔄 Limpar filtros", use_container_width=True):
+        st.session_state["filtro_projetos"] = lista_projetos
+        st.session_state["filtro_anos"]     = lista_anos
+        st.session_state["filtro_meses"]    = lista_meses
+        st.rerun()
+
+# ── Aplicação dos filtros ─────────────────────────────────────────────────────
 df_filtrado = df_dashboard.copy()
 
-# Aplicando filtro multi-seleção de projeto
 if projetos_selecionados:
     df_filtrado = df_filtrado[df_filtrado["nome_projeto"].isin(projetos_selecionados)]
-    
-# Aplicando filtro multi-seleção de ano
+
 if anos_selecionados and "ano" in df_custos_raw.columns:
-    # Filtra na base bruta quais centros de custo tiveram movimentação nos anos escolhidos
-    projetos_nos_anos = df_custos_raw[df_custos_raw["ano"].astype(str).isin(anos_selecionados)]["centro_de_custo"].unique()
+    projetos_nos_anos = df_custos_raw[
+        df_custos_raw["ano"].astype(str).isin(anos_selecionados)
+    ]["centro_de_custo"].unique()
     df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_nos_anos)]
-    
-# Aplicando filtro multi-seleção de mês
+
 if meses_selecionados and "mes" in df_custos_raw.columns:
-    # Filtra na base bruta quais centros de custo tiveram movimentação nos meses escolhidos
-    projetos_nos_meses = df_custos_raw[df_custos_raw["mes"].astype(str).isin(meses_selecionados)]["centro_de_custo"].unique()
+    projetos_nos_meses = df_custos_raw[
+        df_custos_raw["mes"].astype(str).isin(meses_selecionados)
+    ]["centro_de_custo"].unique()
     df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_nos_meses)]
 
-# Mapeia os DataFrames brutos filtrados para manter a compatibilidade com seus gráficos originais
-df_f = df_filtrado
+df_f   = df_filtrado
 df_c_f = df_custos_raw[df_custos_raw["centro_de_custo"].isin(df_f["projeto"])] if not df_custos_raw.empty else df_custos_raw
-df_h_f = df_horas_raw[df_horas_raw["c_custo"].isin(df_f["projeto"])] if not df_horas_raw.empty else df_horas_raw
+df_h_f = df_horas_raw[df_horas_raw["c_custo"].isin(df_f["projeto"])]           if not df_horas_raw.empty else df_horas_raw
 mes_col = "mes_ref" if "mes_ref" in df_c_f.columns else None
 
-# ── KPIs ─────────────────────────────────────────────────────────────────────
+# ── Tabela visual ─────────────────────────────────────────────────────────────
+if not df_filtrado.empty:
+    df_visual = df_filtrado[[
+        "projeto", "nome_projeto", "valor_total", "horas_total", "custo_por_hora"
+    ]].rename(columns={
+        "projeto":        "Centro de Custo",
+        "nome_projeto":   "Nome do Projeto",
+        "valor_total":    "Realizado (R$)",
+        "horas_total":    "Horas Acumuladas",
+        "custo_por_hora": "R$/h",
+    })
+    st.subheader("Análise de Projetos com Gastos Ativos")
+    st.dataframe(df_visual, use_container_width=True)
+else:
+    st.info("Nenhum projeto encontrado para os filtros selecionados.")
+
+# ── KPIs ──────────────────────────────────────────────────────────────────────
 st.subheader("Visão Geral")
 k1, k2, k3, k4 = st.columns(4)
 
@@ -87,10 +121,10 @@ total_horas   = df_f["horas_total"].sum()
 custo_h_medio = total_custo / total_horas if total_horas > 0 else 0
 n_projetos    = len(df_f)
 
-k1.metric("💰 Realizado Total",    formata_brl(total_custo))
-k2.metric("⏱️ Horas Totais",       f"{total_horas:,.0f} h")
-k3.metric("📐 Custo Médio/Hora",   formata_brl(custo_h_medio))
-k4.metric("📁 Projetos (CC)",      str(n_projetos))
+k1.metric("💰 Realizado Total",  formata_brl(total_custo))
+k2.metric("⏱️ Horas Totais",     f"{total_horas:,.0f} h")
+k3.metric("📐 Custo Médio/Hora", formata_brl(custo_h_medio))
+k4.metric("📁 Projetos (CC)",    str(n_projetos))
 
 st.divider()
 
@@ -114,28 +148,6 @@ if not df_c_f.empty and mes_col:
 
 st.divider()
 
-# ── 3. Tabela Visual com Nome do Projeto (Gasto Não-Nulo) ──────────────────────
-if not df_filtrado.empty:
-    df_visual = df_filtrado[[
-        "projeto", 
-        "nome_projeto", 
-        "valor_total", 
-        "horas_total", 
-        "custo_por_hora"
-    ]].rename(columns={
-        "projeto": "Centro de Custo",
-        "nome_projeto": "Nome do Projeto",
-        "valor_total": "Realizado (R$)",
-        "horas_total": "Horas Acumuladas",
-        "custo_por_hora": "R$/h"
-    })
-
-    st.subheader("Análise de Projetos com Gastos Ativos")
-    st.dataframe(df_visual, use_container_width=True)
-else:
-    st.info("Nenhum projeto encontrado para os filtros selecionados.")
-
-
 # ── Tabela resumo ─────────────────────────────────────────────────────────────
 st.subheader("Tabela Resumo por Centro de Custo")
 
@@ -145,18 +157,16 @@ for c in ["filial", "area", "tipo_projeto", "segmento"]:
         cols_disp.append(c)
 
 tabela = df_f[cols_disp].copy()
-
-rename_map = {
-    "projeto":       "Centro de Custo",
-    "valor_total":   "Realizado (R$)",
-    "horas_total":   "Horas",
-    "custo_por_hora":"R$/h",
-    "filial":        "Filial",
-    "area":          "Área",
-    "tipo_projeto":  "Tipo Projeto",
-    "segmento":      "Segmento",
-}
-tabela.rename(columns=rename_map, inplace=True)
+tabela.rename(columns={
+    "projeto":        "Centro de Custo",
+    "valor_total":    "Realizado (R$)",
+    "horas_total":    "Horas",
+    "custo_por_hora": "R$/h",
+    "filial":         "Filial",
+    "area":           "Área",
+    "tipo_projeto":   "Tipo Projeto",
+    "segmento":       "Segmento",
+}, inplace=True)
 
 csv = tabela.to_csv(index=False).encode("utf-8")
 st.download_button("⬇️ Exportar CSV", csv, "resumo_projetos.csv", "text/csv")
