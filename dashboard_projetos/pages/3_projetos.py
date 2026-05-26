@@ -12,7 +12,7 @@ from utils import charts
 init_db()
 st.title("📈 Andamento dos Projetos")
 
-# CORREÇÃO: Desempacota os 3 valores que a função agregar_tudo() agora retorna
+# 1. Carrega os dados processados e consolidados do banco (Retorno de 3 valores)
 df, df_custos_raw, df_horas_raw = agregar_tudo()
 
 # Garante que o aplicativo pare de rodar se não houver dados no banco
@@ -20,44 +20,85 @@ if df.empty:
     st.warning("⚠️ Nenhum dado encontrado. Acesse **Upload de Planilhas** e importe seus arquivos.")
     st.stop()
 
-# ── Sidebar ──────────────────────────────────────────────────────────────────
+# ── Sidebar (Filtros em Linhas e Multi-seleção iguais ao Dashboard) ───────────
 with st.sidebar:
     st.header("🔍 Filtros")
-    projetos_all = sorted(df["projeto"].unique().tolist())
-    projetos_sel = st.multiselect("Centro de Custo / Projeto", projetos_all, default=projetos_all)
+    
+    # Filtro 1: Projeto (Mapeado por Nome do Projeto)
+    lista_projetos = sorted(df["nome_projeto"].dropna().unique().tolist())
+    projetos_selecionados = st.multiselect(
+        "Selecione os Projetos:", 
+        options=lista_projetos,
+        default=[]  # Vazio por padrão significa que não está filtrando nada (mostra tudo)
+    )
+    
+    # Filtro 2: Ano
+    if "ano" in df_custos_raw.columns:
+        lista_anos = sorted(df_custos_raw["ano"].dropna().astype(str).unique().tolist())
+    else:
+        lista_anos = []
+    anos_selecionados = st.multiselect(
+        "Selecione os Anos:", 
+        options=lista_anos,
+        default=[]
+    )
+    
+    # Filtro 3: Mês
+    if "mes" in df_custos_raw.columns:
+        lista_meses = sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolist())
+    else:
+        lista_meses = []
+    meses_selecionados = st.multiselect(
+        "Selecione os Meses:", 
+        options=lista_meses,
+        default=[]
+    )
 
-    if "segmento" in df.columns:
-        segs = sorted(df["segmento"].dropna().unique().tolist())
-        segs = [s for s in segs if s and str(s) != "0"]
-        if segs:
-            seg_sel = st.multiselect("Segmento", segs, default=segs)
-            projetos_sel = [p for p in projetos_sel
-                            if df.loc[df["projeto"] == p, "segmento"].values[0] in seg_sel]
+# ── 2. Aplicação em cascata dos filtros Multi-seleção ─────────────────────────
+df_filtrado = df.copy()
 
-df_f = df[df["projeto"].isin(projetos_sel)]
+# Aplicando filtro de projeto
+if projetos_selecionados:
+    df_filtrado = df_filtrado[df_filtrado["nome_projeto"].isin(projetos_selecionados)]
+    
+# Aplicando filtro de ano
+if anos_selecionados and "ano" in df_custos_raw.columns:
+    projetos_nos_anos = df_custos_raw[df_custos_raw["ano"].astype(str).isin(anos_selecionados)]["centro_de_custo"].unique()
+    df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_nos_anos)]
+    
+# Aplicando filtro de mês
+if meses_selecionados and "mes" in df_custos_raw.columns:
+    projetos_nos_meses = df_custos_raw[df_custos_raw["mes"].astype(str).isin(meses_selecionados)]["centro_de_custo"].unique()
+    df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_nos_meses)]
+
+# Define a variável final para renderização dos componentes na tela
+df_f = df_filtrado
 
 # ── Gauges de orçamento (percentual de realizado/orçamento) ──────────────────
 st.subheader("Consumo de Orçamento por Projeto")
 
-# Aviso se não houver orçamento cadastrado
-tem_orcamento = (df_f["orcamento"] > 0).any()
-if not tem_orcamento:
-    st.info(
-        "ℹ️ As planilhas não contêm coluna de **orçamento**. "
-        "Os gauges serão exibidos apenas quando um orçamento for informado. "
-        "Por ora, é exibido o realizado absoluto por projeto."
-    )
-    # Mostra barras de realizado no lugar dos gauges
-    st.plotly_chart(charts.grafico_realizado_por_projeto(df_f), width="stretch")
+if df_f.empty:
+    st.info("Nenhum projeto encontrado para os filtros selecionados.")
 else:
-    n = len(df_f)
-    cols = st.columns(min(n, 4)) if n > 0 else st.columns(1)
-    for i, (_, row) in enumerate(df_f.iterrows()):
-        with cols[i % len(cols)]:
-            st.plotly_chart(
-                charts.gauge_orcamento(row["projeto"], row["pct_orcamento"]),
-                width="stretch",
-            )
+    # Aviso se não houver orçamento cadastrado
+    tem_orcamento = (df_f["orcamento"] > 0).any()
+    if not tem_orcamento:
+        st.info(
+            "ℹ️ As planilhas não contêm coluna de **orçamento**. "
+            "Os gauges serão exibidos apenas quando um orçamento for informado. "
+            "Por ora, é exibido o realizado absoluto por projeto."
+        )
+        # Mostra barras de realizado no lugar dos gauges
+        st.plotly_chart(charts.grafico_realizado_por_projeto(df_f), width="stretch")
+    else:
+        n = len(df_f)
+        cols = st.columns(min(n, 4)) if n > 0 else st.columns(1)
+        for i, (_, row) in enumerate(df_f.iterrows()):
+            with cols[i % len(cols)]:
+                st.plotly_chart(
+                    charts.gauge_orcamento(row["projeto"], row["pct_orcamento"]),
+                    width="stretch",
+                )
 
 st.divider()
 
@@ -72,7 +113,9 @@ for _, row in df_f.iterrows():
         if v and str(v) != "0":
             label_extra += f" · {v}"
 
-    with st.expander(f"{semaforo} **{row['projeto']}**{label_extra}", expanded=False):
+    # Adicionado o 'nome_projeto' no título do expander para ficar mais legível
+    titulo_expander = f"{semaforo} **{row['projeto']}** - {row['nome_projeto']}{label_extra}"
+    with st.expander(titulo_expander, expanded=False):
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Realizado",    formata_brl(row["valor_total"]))
         c2.metric("Orçamento",    formata_brl(row["orcamento"]) if row["orcamento"] > 0 else "N/D")
@@ -94,9 +137,9 @@ for _, row in df_f.iterrows():
             f"**Equipe:** {row.get('colaboradores', 'N/D')}"
         )
 
-        # Gráfico de horas por colaborador (nome)
-        if not df_horas.empty and "c_custo" in df_horas.columns:
-            df_h_proj = df_horas[df_horas["c_custo"] == row["projeto"]]
+        # CORREÇÃO: Ajustada a variável para df_horas_raw (conforme retorno do agregar_tudo)
+        if not df_horas_raw.empty and "c_custo" in df_horas_raw.columns:
+            df_h_proj = df_horas_raw[df_horas_raw["c_custo"] == row["projeto"]]
             if not df_h_proj.empty and "nome" in df_h_proj.columns:
                 st.plotly_chart(
                     charts.grafico_horas_colaborador(df_h_proj, row["projeto"]),
@@ -108,57 +151,58 @@ st.divider()
 # ── Tabela de andamento ───────────────────────────────────────────────────────
 st.subheader("Tabela de Andamento")
 
-cols_disp = ["projeto", "valor_total", "horas_total", "custo_por_hora"]
-if (df_f["orcamento"] > 0).any():
-    cols_disp += ["orcamento", "saldo_orcamento", "pct_orcamento"]
-for c in ["filial", "area", "segmento"]:
-    if c in df_f.columns:
-        cols_disp.append(c)
+if not df_f.empty:
+    cols_disp = ["projeto", "valor_total", "horas_total", "custo_por_hora"]
+    if (df_f["orcamento"] > 0).any():
+        cols_disp += ["orcamento", "saldo_orcamento", "pct_orcamento"]
+    for c in ["filial", "area", "segmento"]:
+        if c in df_f.columns:
+            cols_disp.append(c)
 
-tabela = df_f[cols_disp].copy()
+    tabela = df_f[cols_disp].copy()
 
-if "pct_orcamento" in tabela.columns:
-    tabela.insert(0, "🚦", tabela["pct_orcamento"].apply(cor_status))
+    if "pct_orcamento" in tabela.columns:
+        tabela.insert(0, "🚦", tabela["pct_orcamento"].apply(cor_status))
 
-rename_map = {
-    "projeto":        "Centro de Custo",
-    "valor_total":    "Realizado (R$)",
-    "horas_total":    "Horas",
-    "custo_por_hora": "R$/h",
-    "orcamento":      "Orçamento (R$)",
-    "saldo_orcamento":"Saldo (R$)",
-    "pct_orcamento":  "% Orçamento",
-    "filial":         "Filial",
-    "area":           "Área",
-    "segmento":       "Segmento",
-}
-tabela.rename(columns=rename_map, inplace=True)
+    rename_map = {
+        "projeto":        "Centro de Custo",
+        "valor_total":    "Realizado (R$)",
+        "horas_total":    "Horas",
+        "custo_por_hora": "R$/h",
+        "orcamento":      "Orçamento (R$)",
+        "saldo_orcamento":"Saldo (R$)",
+        "pct_orcamento":  "% Orçamento",
+        "filial":         "Filial",
+        "area":           "Área",
+        "segmento":       "Segmento",
+    }
+    tabela.rename(columns=rename_map, inplace=True)
 
-fmt = {
-    "Realizado (R$)":  "R$ {:,.2f}",
-    "Horas":           "{:.0f}",
-    "R$/h":            "R$ {:.2f}",
-}
-if "Orçamento (R$)" in tabela.columns:
-    fmt["Orçamento (R$)"]  = "R$ {:,.2f}"
-    fmt["Saldo (R$)"]      = "R$ {:,.2f}"
-    fmt["% Orçamento"]     = "{:.1f}%"
+    fmt = {
+        "Realizado (R$)":  "R$ {:,.2f}",
+        "Horas":           "{:.0f}",
+        "R$/h":            "R$ {:.2f}",
+    }
+    if "Orçamento (R$)" in tabela.columns:
+        fmt["Orçamento (R$)"]  = "R$ {:,.2f}"
+        fmt["Saldo (R$)"]      = "R$ {:,.2f}"
+        fmt["% Orçamento"]     = "{:.1f}%"
 
-def colorir_pct(val):
-    try:
-        v = float(str(val).replace("%", "").replace(",", ".").strip())
-    except Exception:
-        return ""
-    if v > 100:
-        return "background-color: #c0392b; color: white"
-    if v >= 90:
-        return "background-color: #ffd6d6; color: #7a0000"
-    if v >= 70:
-        return "background-color: #fff3cd; color: #664d00"
-    return "background-color: #d4edda; color: #155724"
+    def colorir_pct(val):
+        try:
+            v = float(str(val).replace("%", "").replace(",", ".").strip())
+        except Exception:
+            return ""
+        if v > 100:
+            return "background-color: #c0392b; color: white"
+        if v >= 90:
+            return "background-color: #ffd6d6; color: #7a0000"
+        if v >= 70:
+            return "background-color: #fff3cd; color: #664d00"
+        return "background-color: #d4edda; color: #155724"
 
-styler = tabela.style.format(fmt)
-if "% Orçamento" in tabela.columns:
-    styler = styler.applymap(colorir_pct, subset=["% Orçamento"])
+    styler = tabela.style.format(fmt)
+    if "% Orçamento" in tabela.columns:
+        styler = styler.applymap(colorir_pct, subset=["% Orçamento"])
 
-st.dataframe(styler, width="stretch", hide_index=True)
+    st.dataframe(styler, width="stretch", hide_index=True)
