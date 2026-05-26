@@ -20,7 +20,6 @@ CUSTOS
 HORAS
   Período                          → periodo
   C.Custo                          → c_custo            ← chave de projeto
-  Ordem Interna                    → ordem_interna
   Descrição Ordem Interna          → descricao_ordem_interna
   Centro de Lucro                  → centro_de_lucro
   Descrição C.Lucro                → descricao_c_lucro
@@ -74,7 +73,6 @@ MAP_HORAS = {
     "período":                              "periodo",
     "periodo":                              "periodo",
     "c.custo":                              "c_custo",
-    "ordem interna":                        "ordem_interna",
     "descrição ordem interna":              "descricao_ordem_interna",
     "descricao ordem interna":              "descricao_ordem_interna",
     "centro de lucro":                      "centro_de_lucro",
@@ -300,7 +298,5 @@ def cor_status(pct: float) -> str:
     if pct > 100:
         return "🚨"
     if pct >= 90:
-        return "🔴"
-    if pct >= 70:
         return "🟡"
     return "🟢"
