@@ -7,6 +7,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 import streamlit as st
+import pandas as pd
 from utils.db import init_db, migrar_db, salvar_orcamento, carregar_orcamento_projeto
 from utils.data_processor import agregar_tudo, formata_brl
 
@@ -14,13 +15,13 @@ init_db()
 migrar_db()
 
 st.title("📋 Planejamento de Orçamentos e Prazos")
-st.markdown("Insira ou atualize o orçamento e o cronograma de marcos (Milestones) dos projetos.")
+st.markdown("Insira ou atualize o orçamento e o cronograma de marcos dos projetos.")
 
-# ── 1. Carrega projetos disponíveis ──────────────────────────────────────────
-df_dashboard, df_custos_raw, _ = agregar_tudo()
+# ── 1. Projetos disponíveis ───────────────────────────────────────────────────
+df_dashboard, _, _ = agregar_tudo()
 
 if df_dashboard.empty:
-    st.warning("⚠️ Nenhum projeto encontrado no banco de dados. Importe as planilhas primeiro na página de Upload.")
+    st.warning("⚠️ Nenhum projeto encontrado. Importe as planilhas na página de Upload.")
     st.stop()
 
 lista_cc = sorted(df_dashboard["projeto"].unique().tolist())
@@ -32,82 +33,87 @@ cc_selecionado = st.selectbox(
     format_func=lambda x: f"{x} — {mapeamento_nomes.get(x, 'Sem Nome')}"
 )
 
-# ── 2. Busca dados já salvos para o projeto selecionado ──────────────────────
+# ── 2. Dados já salvos ────────────────────────────────────────────────────────
 dados = carregar_orcamento_projeto(cc_selecionado)
 
 def _parse_date(valor) -> date:
-    """Converte string 'YYYY-MM-DD' para date, ou retorna hoje."""
-    if valor:
+    if valor and str(valor) not in ("0", "None", "nan"):
         try:
             return datetime.strptime(str(valor)[:10], "%Y-%m-%d").date()
         except ValueError:
             pass
     return datetime.today().date()
 
-def _str_or_none(d: date) -> str | None:
+def _str_or_none(d) -> str | None:
     return str(d) if d else None
 
-# Valores pré-preenchidos
-orcamento_atual       = float(dados["orcamento_previsto"]) if dados and dados.get("orcamento_previsto") else 0.0
-d_inicio_val          = _parse_date(dados.get("data_inicio"))           if dados else datetime.today().date()
-p_viabilidade_val     = _parse_date(dados.get("prev_viabilidade"))      if dados else datetime.today().date()
-p_qualidade_val       = _parse_date(dados.get("prev_qualidade"))        if dados else datetime.today().date()
-p_aprov_lanc_val      = _parse_date(dados.get("prev_aprov_lancamento")) if dados else datetime.today().date()
-p_lancamento_val      = _parse_date(dados.get("prev_lancamento"))       if dados else datetime.today().date()
-r_viabilidade_val     = _parse_date(dados.get("real_viabilidade"))      if dados else datetime.today().date()
-r_qualidade_val       = _parse_date(dados.get("real_qualidade"))        if dados else datetime.today().date()
-r_aprov_lanc_val      = _parse_date(dados.get("real_aprov_lancamento")) if dados else datetime.today().date()
-r_lancamento_val      = _parse_date(dados.get("real_lancamento"))       if dados else datetime.today().date()
-
-# Orçamento realizado (somente leitura — vem da planilha de custos)
-realizado_projeto = 0.0
-if not df_dashboard.empty:
-    linha = df_dashboard[df_dashboard["projeto"] == cc_selecionado]
-    if not linha.empty:
-        realizado_projeto = float(linha.iloc[0].get("valor_total", 0))
+orcamento_atual  = float(dados["orcamento_previsto"]) if dados and dados.get("orcamento_previsto") else 0.0
+realizado_proj   = 0.0
+linha = df_dashboard[df_dashboard["projeto"] == cc_selecionado]
+if not linha.empty:
+    realizado_proj = float(linha.iloc[0].get("valor_total", 0))
 
 # ── 3. Formulário ─────────────────────────────────────────────────────────────
 with st.form("form_orcamento", clear_on_submit=False):
 
-    st.subheader("💰 Aspectos Financeiros")
-
+    # — Financeiro ————————————————————————————————————————————————————————————
+    st.subheader("💰 Orçamento")
     col_fin1, col_fin2 = st.columns(2)
     with col_fin1:
         v_orcamento = st.number_input(
             "Orçamento previsto (R$):",
-            min_value=0.0,
-            value=orcamento_atual,
-            format="%.2f",
-            help="Valor total aprovado para o projeto."
+            min_value=0.0, value=orcamento_atual, format="%.2f"
         )
     with col_fin2:
         st.text_input(
-            "Orçamento realizado (R$) — planilha de custos:",
-            value=formata_brl(realizado_projeto),
+            "Orçamento realizado (R$) — somente leitura:",
+            value=formata_brl(realizado_proj),
             disabled=True,
-            help="Valor calculado automaticamente a partir dos lançamentos importados. Não é editável aqui."
+            help="Calculado automaticamente a partir dos lançamentos importados."
         )
 
     st.divider()
-    st.subheader("📅 Cronograma e Marcos do Projeto (Milestones)")
 
-    c1, c2 = st.columns(2)
+    # — Marcos: cabeçalho fixo + uma linha por marco ───────────────────────────
+    st.subheader("📅 Cronograma de Marcos")
 
-    with c1:
-        st.markdown("### 🗓️ Planejado & Abertura")
-        d_inicio      = st.date_input("Data de início do projeto (abertura CC):", value=d_inicio_val)
-        p_viabilidade = st.date_input("Data PREVISTA — Aprovação da Viabilidade:", value=p_viabilidade_val)
-        p_qualidade   = st.date_input("Data PREVISTA — Aprovação nos Critérios de Qualidade:", value=p_qualidade_val)
-        p_aprov_lanc  = st.date_input("Data PREVISTA — Aprovação para Lançamento:", value=p_aprov_lanc_val)
-        p_lancamento  = st.date_input("Data PREVISTA — LANÇAMENTO:", value=p_lancamento_val)
+    # Cabeçalho das 3 colunas
+    h1, h2, h3 = st.columns([2, 2, 2])
+    h1.markdown("**Marco**")
+    h2.markdown("**🗓️ Data Prevista**")
+    h3.markdown("**✅ Data Realizada**")
 
-    with c2:
-        st.markdown("### 🚀 Realizado")
-        st.markdown("<div style='margin-top: 44px;'></div>", unsafe_allow_html=True)
-        r_viabilidade = st.date_input("Data REALIZADA — Aprovação da Viabilidade:", value=r_viabilidade_val)
-        r_qualidade   = st.date_input("Data REALIZADA — Aprovação nos Critérios de Qualidade:", value=r_qualidade_val)
-        r_aprov_lanc  = st.date_input("Data REALIZADA — Aprovação para Lançamento:", value=r_aprov_lanc_val)
-        r_lancamento  = st.date_input("Data REALIZADA — LANÇAMENTO:", value=r_lancamento_val)
+    st.markdown("<hr style='margin:4px 0 12px 0'>", unsafe_allow_html=True)
+
+    # Linha 1 — Início (só tem previsto)
+    r1c1, r1c2, r1c3 = st.columns([2, 2, 2])
+    r1c1.markdown("**Início do Projeto**<br><small>(abertura CC)</small>", unsafe_allow_html=True)
+    d_inicio = r1c2.date_input("##inicio_prev", value=_parse_date(dados.get("data_inicio") if dados else None), label_visibility="collapsed")
+    r1c3.markdown("<div style='padding-top:8px;color:#888;font-size:13px'>—</div>", unsafe_allow_html=True)
+
+    # Linha 2 — Viabilidade
+    r2c1, r2c2, r2c3 = st.columns([2, 2, 2])
+    r2c1.markdown("**Aprovação da Viabilidade**", unsafe_allow_html=True)
+    p_viabilidade = r2c2.date_input("##viab_prev", value=_parse_date(dados.get("prev_viabilidade") if dados else None), label_visibility="collapsed")
+    r_viabilidade = r2c3.date_input("##viab_real", value=_parse_date(dados.get("real_viabilidade") if dados else None), label_visibility="collapsed")
+
+    # Linha 3 — Qualidade
+    r3c1, r3c2, r3c3 = st.columns([2, 2, 2])
+    r3c1.markdown("**Critérios de Qualidade**", unsafe_allow_html=True)
+    p_qualidade = r3c2.date_input("##qual_prev", value=_parse_date(dados.get("prev_qualidade") if dados else None), label_visibility="collapsed")
+    r_qualidade = r3c3.date_input("##qual_real", value=_parse_date(dados.get("real_qualidade") if dados else None), label_visibility="collapsed")
+
+    # Linha 4 — Aprovação para Lançamento
+    r4c1, r4c2, r4c3 = st.columns([2, 2, 2])
+    r4c1.markdown("**Aprovação para Lançamento**", unsafe_allow_html=True)
+    p_aprov_lanc = r4c2.date_input("##aprov_prev", value=_parse_date(dados.get("prev_aprov_lancamento") if dados else None), label_visibility="collapsed")
+    r_aprov_lanc = r4c3.date_input("##aprov_real", value=_parse_date(dados.get("real_aprov_lancamento") if dados else None), label_visibility="collapsed")
+
+    # Linha 5 — Lançamento
+    r5c1, r5c2, r5c3 = st.columns([2, 2, 2])
+    r5c1.markdown("**🚀 LANÇAMENTO**", unsafe_allow_html=True)
+    p_lancamento = r5c2.date_input("##lanc_prev", value=_parse_date(dados.get("prev_lancamento") if dados else None), label_visibility="collapsed")
+    r_lancamento = r5c3.date_input("##lanc_real", value=_parse_date(dados.get("real_lancamento") if dados else None), label_visibility="collapsed")
 
     st.markdown("<br>", unsafe_allow_html=True)
     botao_salvar = st.form_submit_button("💾 Salvar Dados do Projeto", type="primary")
@@ -132,77 +138,77 @@ if botao_salvar:
         st.success(f"✅ Dados do projeto **{cc_selecionado}** gravados com sucesso!")
         st.toast("Banco de dados atualizado!", icon="💾")
     except Exception as e:
-        st.error(f"❌ Erro ao salvar dados no banco: {e}")
+        st.error(f"❌ Erro ao salvar: {e}")
 
-# ── 5. Resumo do projeto selecionado (pós-salvo) ──────────────────────────────
+# ── 5. Resumo pós-salvo ───────────────────────────────────────────────────────
 st.divider()
 st.subheader(f"📊 Resumo — {cc_selecionado} / {mapeamento_nomes.get(cc_selecionado, '')}")
 
 dados_atuais = carregar_orcamento_projeto(cc_selecionado)
 if dados_atuais:
-    col_a, col_b, col_c = st.columns(3)
     orc_prev = float(dados_atuais.get("orcamento_previsto") or 0)
-    saldo    = orc_prev - realizado_projeto
-    pct      = (realizado_projeto / orc_prev * 100) if orc_prev > 0 else 0
+    saldo    = orc_prev - realizado_proj
+    pct      = (realizado_proj / orc_prev * 100) if orc_prev > 0 else 0
 
-    col_a.metric("Orçamento Previsto", formata_brl(orc_prev))
-    col_b.metric("Realizado (custos)", formata_brl(realizado_projeto))
-    col_c.metric(
-        "Saldo",
-        formata_brl(saldo),
-        delta=f"{pct:.1f}% consumido",
-        delta_color="inverse"
-    )
+    col_a, col_b, col_c = st.columns(3)
+    col_a.metric("Orçamento Previsto",  formata_brl(orc_prev))
+    col_b.metric("Realizado (custos)",  formata_brl(realizado_proj))
+    col_c.metric("Saldo", formata_brl(saldo), delta=f"{pct:.1f}% consumido", delta_color="inverse")
 
-    # Tabela de marcos
-    marcos = {
-        "Marco": [
-            "Início do Projeto (abertura CC)",
-            "Aprovação da Viabilidade",
-            "Aprovação — Critérios de Qualidade",
-            "Aprovação para Lançamento",
-            "LANÇAMENTO",
-        ],
-        "Previsto": [
-            dados_atuais.get("data_inicio") or "—",
-            dados_atuais.get("prev_viabilidade") or "—",
-            dados_atuais.get("prev_qualidade") or "—",
-            dados_atuais.get("prev_aprov_lancamento") or "—",
-            dados_atuais.get("prev_lancamento") or "—",
-        ],
-        "Realizado": [
-            "—",  # data de início não tem "realizado" separado
-            dados_atuais.get("real_viabilidade") or "—",
-            dados_atuais.get("real_qualidade") or "—",
-            dados_atuais.get("real_aprov_lancamento") or "—",
-            dados_atuais.get("real_lancamento") or "—",
-        ],
-    }
+    # Tabela de marcos com comparativo previsto x realizado e indicador de atraso
+    def _fmt(val) -> str:
+        if not val or str(val) in ("0", "None", "nan"):
+            return "—"
+        try:
+            return datetime.strptime(str(val)[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+        except Exception:
+            return str(val)
 
-    import pandas as pd
-    df_marcos = pd.DataFrame(marcos)
+    def _delta(prev, real) -> str:
+        if not prev or not real or str(prev) in ("0","None") or str(real) in ("0","None"):
+            return "—"
+        try:
+            dp = datetime.strptime(str(prev)[:10], "%Y-%m-%d")
+            dr = datetime.strptime(str(real)[:10], "%Y-%m-%d")
+            diff = (dr - dp).days
+            if diff > 0:  return f"🔴 +{diff} dias"
+            if diff < 0:  return f"🟢 {abs(diff)} dias adiantado"
+            return "✅ No prazo"
+        except Exception:
+            return "—"
 
-    # Destaca atrasos (realizado > previsto) em vermelho
-    def _highlight_atraso(row):
-        styles = ["", "", ""]
-        prev = row["Previsto"]
-        real = row["Realizado"]
-        if prev != "—" and real != "—":
-            try:
-                dp = datetime.strptime(prev[:10], "%Y-%m-%d")
-                dr = datetime.strptime(real[:10], "%Y-%m-%d")
-                if dr > dp:
-                    styles[2] = "background-color: #fde8e8; color: #900"
-                else:
-                    styles[2] = "background-color: #e8fde8; color: #060"
-            except Exception:
-                pass
-        return styles
+    marcos = [
+        ("Início do Projeto (abertura CC)", dados_atuais.get("data_inicio"),           None),
+        ("Aprovação da Viabilidade",         dados_atuais.get("prev_viabilidade"),      dados_atuais.get("real_viabilidade")),
+        ("Critérios de Qualidade",           dados_atuais.get("prev_qualidade"),        dados_atuais.get("real_qualidade")),
+        ("Aprovação para Lançamento",        dados_atuais.get("prev_aprov_lancamento"), dados_atuais.get("real_aprov_lancamento")),
+        ("🚀 LANÇAMENTO",                   dados_atuais.get("prev_lancamento"),        dados_atuais.get("real_lancamento")),
+    ]
+
+    df_marcos = pd.DataFrame([
+        {
+            "Marco":    nome,
+            "Previsto": _fmt(prev),
+            "Realizado": _fmt(real) if real is not None else "—",
+            "Situação": _delta(prev, real) if real is not None else "—",
+        }
+        for nome, prev, real in marcos
+    ])
+
+    def _highlight(row):
+        sit = row["Situação"]
+        if "🔴" in str(sit):
+            return ["", "", "background-color:#fde8e8", "background-color:#fde8e8; color:#900"]
+        if "🟢" in str(sit):
+            return ["", "", "background-color:#e8fde8", "background-color:#e8fde8; color:#060"]
+        if "✅" in str(sit):
+            return ["", "", "background-color:#eaf4fb", "background-color:#eaf4fb; color:#1a5276"]
+        return ["", "", "", ""]
 
     st.dataframe(
-        df_marcos.style.apply(_highlight_atraso, axis=1),
+        df_marcos.style.apply(_highlight, axis=1),
         use_container_width=True,
         hide_index=True,
     )
 else:
-    st.info("Nenhum dado salvo ainda para este projeto. Preencha o formulário acima e salve.")
+    st.info("Preencha o formulário acima e salve para ver o resumo.")
