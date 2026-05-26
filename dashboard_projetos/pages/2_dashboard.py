@@ -8,37 +8,36 @@ import streamlit as st
 from utils.db import init_db
 from utils.data_processor import agregar_tudo, formata_brl, cor_status
 from utils import charts
-# Importa a função que atualizamos no data_processor
-from data_processor import agregar_tudo
 
 init_db()
 st.title("📊 Dashboard Financeiro")
 
+# 1. Carrega os dados processados e consolidados do banco
 df_dashboard, df_custos_raw, df_horas_raw = agregar_tudo()
 
-if df_dashboard.empty
+# CORREÇÃO: Adicionado o ':' que faltava na validação
+if df_dashboard.empty:
     st.warning("⚠️ Nenhum dado encontrado. Acesse **Upload de Planilhas** e importe seus arquivos.")
     st.stop()
 
-# ── Sidebar ──────────────────────────────────────────────────────────────────
+# ── Sidebar (Filtros) ─────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("🔍 Filtros")
-    # Criamos 3 colunas para colocar os filtros lado a lado na horizontal
+    # Criamos 3 colunas para colocar os filtros lado a lado na horizontal na barra lateral
     col1, col2, col3 = st.columns(3)
     
     with col1:
         # Filtro de Projeto
         lista_projetos = ["Todos"] + sorted(df_dashboard["nome_projeto"].dropna().unique().tolist())
-        projeto_selecionado = st.selectbox("Selecione o Projeto:", options=lista_projetos)
+        projeto_selecionado = st.selectbox("Projeto:", options=lista_projetos)
         
     with col2:
         # Filtro de Ano
-        # Tenta buscar os anos da base de custos, caso não existam, deixa 'Todos'
         if "ano" in df_custos_raw.columns:
             lista_anos = ["Todos"] + sorted(df_custos_raw["ano"].dropna().astype(str).unique().tolist())
         else:
             lista_anos = ["Todos"]
-        ano_selecionado = st.selectbox("Selecione o Ano:", options=lista_anos)
+        ano_selecionado = st.selectbox("Ano:", options=lista_anos)
         
     with col3:
         # Filtro de Mês
@@ -46,29 +45,33 @@ with st.sidebar:
             lista_meses = ["Todos"] + sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolist())
         else:
             lista_meses = ["Todos"]
-        mes_selecionado = st.selectbox("Selecione o Mês:", options=lista_meses)
+        mes_selecionado = st.selectbox("Mês:", options=lista_meses)
 
-    # 2. Aplicação em cascata dos filtros no DataFrame principal
-    df_filtrado = df_dashboard.copy()
+# ── 2. Aplicação em cascata dos filtros (Fora da Sidebar) ─────────────────────
+df_filtrado = df_dashboard.copy()
+
+# Aplicando o filtro de projeto
+if projeto_selecionado != "Todos":
+    df_filtrado = df_filtrado[df_filtrado["nome_projeto"] == projeto_selecionado]
     
-    # Aplicando o filtro de projeto
-    if proyecto_selecionado != "Todos":
-        df_filtrado = df_filtrado[df_filtrado["nome_projeto"] == proyecto_selecionado]
-        
-    # Aplicando o filtro de ano (utilizando as referências temporárias cruzadas se necessário)
-    if ano_selecionado != "Todos" and "ano" in df_custos_raw.columns:
-        # Descobre quais projetos têm movimentação no ano selecionado
-        projetos_no_ano = df_custos_raw[df_custos_raw["ano"].astype(str) == ano_selecionado]["centro_de_custo"].unique()
-        df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_no_ano)]
-        
-    # Aplicando o filtro de mês
-    if mes_selecionado != "Todos" and "mes" in df_custos_raw.columns:
-        # Descobre quais projetos têm movimentação no mês selecionado
-        projetos_no_mes = df_custos_raw[df_custos_raw["mes"].astype(str) == mes_selecionado]["centro_de_custo"].unique()
-        df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_no_mes)]
+# Aplicando o filtro de ano
+if ano_selecionado != "Todos" and "ano" in df_custos_raw.columns:
+    projetos_no_ano = df_custos_raw[df_custos_raw["ano"].astype(str) == ano_selecionado]["centro_de_custo"].unique()
+    df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_no_ano)]
+    
+# Aplicando o filtro de mês
+if mes_selecionado != "Todos" and "mes" in df_custos_raw.columns:
+    projetos_no_mes = df_custos_raw[df_custos_raw["mes"].astype(str) == mes_selecionado]["centro_de_custo"].unique()
+    df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_no_mes)]
 
+# Mapeia os DataFrames brutos filtrados para manter a compatibilidade com seus gráficos originais
+df_f = df_filtrado
+df_c_f = df_custos_raw[df_custos_raw["centro_de_custo"].isin(df_f["projeto"])] if not df_custos_raw.empty else df_custos_raw
+df_h_f = df_horas_raw[df_horas_raw["c_custo"].isin(df_f["projeto"])] if not df_horas_raw.empty else df_horas_raw
+mes_col = "mes_ref" if "mes_ref" in df_c_f.columns else None
 
-    # 3. Prepara a tabela visual formatada usando o DataFrame filtrado resultante
+# ── 3. Tabela Visual com Nome do Projeto (Gasto Não-Nulo) ──────────────────────
+if not df_filtrado.empty:
     df_visual = df_filtrado[[
         "projeto", 
         "nome_projeto", 
@@ -84,9 +87,9 @@ with st.sidebar:
     })
 
     st.subheader("Análise de Projetos com Gastos Ativos")
-    
-    # 4. Exibe a tabela final na tela
     st.dataframe(df_visual, use_container_width=True)
+else:
+    st.info("Nenhum projeto encontrado para os filtros selecionados.")
 
 # ── KPIs ─────────────────────────────────────────────────────────────────────
 st.subheader("Visão Geral")
@@ -145,44 +148,6 @@ rename_map = {
     "segmento":      "Segmento",
 }
 tabela.rename(columns=rename_map, inplace=True)
-
-fmt = {
-    "Realizado (R$)": "R$ {:,.2f}",
-    "Horas":          "{:.0f}",
-    "R$/h":           "R$ {:.2f}",
-}
-
-def colorir_realizado(val):
-    return ""  # sem dependência externa
-
-# 1. Busca os dados consolidados e já filtrados (apenas maiores que zero)
-df_dashboard, _, _ = agregar_tudo()
-
-# 2. Verifica se o DataFrame não está vazio para evitar erros na tela
-if not df_dashboard.empty:
-    
-    # 3. Filtra e reordena as colunas para o usuário, incluindo o novo 'nome_projeto'
-    df_visual = df_dashboard[[
-        "projeto", 
-        "nome_projeto", 
-        "valor_total", 
-        "horas_total", 
-        "custo_por_hora"
-    ]].rename(columns={
-        "projeto": "Centro de Custo",
-        "nome_projeto": "Nome do Projeto",
-        "valor_total": "Realizado (R$)",
-        "horas_total": "Horas Acumuladas",
-        "custo_por_hora": "R$/h"
-    })
-
-    st.subheader("Análise de Projetos com Gastos Ativos")
-    
-    # 4. Exibe a tabela formatada ocupando a largura total da tela
-    st.dataframe(df_visual, use_container_width=True)
-
-else:
-    st.info("Nenhum projeto com gasto não-nulo encontrado no momento.")
 
 csv = tabela.to_csv(index=False).encode("utf-8")
 st.download_button("⬇️ Exportar CSV", csv, "resumo_projetos.csv", "text/csv")
