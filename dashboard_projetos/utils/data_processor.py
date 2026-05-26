@@ -230,9 +230,9 @@ def agregar_tudo() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     # ── Custos ────────────────────────────────────────────────────────────────
     if not df_custos.empty:
         df_custos["realizado"] = pd.to_numeric(df_custos["realizado"], errors="coerce").fillna(0)
-        df_custos["centro_de_custo"] = df_custos["centro_de_custo"].astype(str).str.strip()
+        # Aplica a regra dos 9 dígitos iniciais
+        df_custos["centro_de_custo"] = df_custos["centro_de_custo"].astype(str).str.strip().str[:9]
 
-        # Coluna de mês para série temporal
         if "data" in df_custos.columns:
             df_custos["mes_ref"] = pd.to_datetime(
                 df_custos["data"], dayfirst=True, errors="coerce"
@@ -251,27 +251,49 @@ def agregar_tudo() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     # ── Horas ─────────────────────────────────────────────────────────────────
     if not df_horas.empty:
         df_horas["hs_nor"]   = pd.to_numeric(df_horas["hs_nor"], errors="coerce").fillna(0)
-        df_horas["c_custo"]  = df_horas["c_custo"].astype(str).str.strip()
+        # Garante o alinhamento limpando e limitando o c_custo também aos 9 dígitos se aplicável
+        df_horas["c_custo"]  = df_horas["c_custo"].astype(str).str.strip().str[:9]
+
+        if "ordem_interna" in df_horas.columns:
+            df_horas["ordem_interna"] = df_horas["ordem_interna"].astype(str).str.strip().str[-5:]
 
         if "periodo" in df_horas.columns:
             df_horas["mes_ref"] = pd.to_datetime(
                 df_horas["periodo"], dayfirst=True, errors="coerce"
             ).dt.to_period("M").astype(str)
 
-        horas_agg = df_horas.groupby("c_custo").agg(
-            horas_total=("hs_nor", "sum"),
-            n_colaboradores=("nome", "nunique"),
-            colaboradores=("nome", lambda x: ", ".join(x.dropna().unique())),
-            tipo_projeto=("tipo_de_projeto", "last"),
-            segmento=("segmento", "last"),
-        ).reset_index().rename(columns={"c_custo": "projeto"})
+        # Mapeia dinamicamente onde o nome textual do projeto/ordem possa estar localizado
+        nome_col_projeto = None
+        for col in ["descricao_ordem_interna", "c_custo_descricao_ordem_interna", "descricao_produto"]:
+            if col in df_horas.columns:
+                nome_col_projeto = col
+                break
+
+        if nome_col_projeto:
+            horas_agg = df_horas.groupby("c_custo").agg(
+                nome_projeto=(nome_col_projeto, "last"),
+                horas_total=("hs_nor", "sum"),
+                n_colaboradores=("nome", "nunique"),
+                colaboradores=("nome", lambda x: ", ".join(x.dropna().unique())),
+                tipo_projeto=("tipo_de_projeto", "last"),
+                segmento=("segmento", "last"),
+            ).reset_index().rename(columns={"c_custo": "projeto"})
+        else:
+            horas_agg = df_horas.groupby("c_custo").agg(
+                horas_total=("hs_nor", "sum"),
+                n_colaboradores=("nome", "nunique"),
+                colaboradores=("nome", lambda x: ", ".join(x.dropna().unique())),
+                tipo_projeto=("tipo_de_projeto", "last"),
+                segmento=("segmento", "last"),
+            ).reset_index().rename(columns={"c_custo": "projeto"})
+            horas_agg["nome_projeto"] = "Não Identificado"
     else:
-        horas_agg = pd.DataFrame(columns=["projeto", "horas_total", "n_colaboradores", "colaboradores"])
+        horas_agg = pd.DataFrame(columns=["projeto", "nome_projeto", "horas_total", "n_colaboradores", "colaboradores"])
 
     # ── Merge ─────────────────────────────────────────────────────────────────
+    # Faz o merge mantendo a coluna 'projeto' como a chave mestre (Centro de Custo)
     merged = custos_agg.merge(horas_agg, on="projeto", how="outer").fillna(0)
 
-    # Sem orçamento explícito: coluna placeholder para não quebrar lógica downstream
     if "orcamento" not in merged.columns:
         merged["orcamento"] = 0.0
 
@@ -282,6 +304,13 @@ def agregar_tudo() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         lambda r: r["valor_total"] / r["orcamento"] * 100 if r["orcamento"] > 0 else 0, axis=1
     )
     merged["saldo_orcamento"] = merged["orcamento"] - merged["valor_total"]
+
+    # REGRA: Filtra apenas projetos cujo gasto ("valor_total") seja estritamente maior que zero
+    merged = merged[merged["valor_total"] > 0].reset_index(drop=True)
+
+    # Se a coluna 'nome_projeto' ficou zerada por causa do fillna(0) em linhas que só tinham custos, ajustamos para string legível
+    if "nome_projeto" in merged.columns:
+        merged["nome_projeto"] = merged["nome_projeto"].replace(0, "Sem descrição de horas")
 
     return merged, df_custos, df_horas
 
