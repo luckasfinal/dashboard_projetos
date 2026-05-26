@@ -33,6 +33,13 @@ COLUNAS_DB_HORAS = [
     "detalhes", "c_custo_descricao_ordem_interna", "matricula_nome", "segmento",
 ]
 
+COLUNAS_DB_ORCAMENTOS = [
+    "projeto", "orcamento_previsto",
+    "data_inicio",
+    "prev_viabilidade", "prev_qualidade", "prev_aprov_lancamento", "prev_lancamento",
+    "real_viabilidade", "real_qualidade", "real_aprov_lancamento", "real_lancamento",
+]
+
 # Tipo SQLite de cada coluna (usado na migração)
 TIPOS_CUSTOS = {
     "data": "TEXT", "ano": "TEXT", "mes": "TEXT", "filial": "TEXT",
@@ -50,6 +57,20 @@ TIPOS_HORAS = {
     "categoria": "TEXT", "atividade": "TEXT", "detalhes": "TEXT",
     "c_custo_descricao_ordem_interna": "TEXT", "matricula_nome": "TEXT",
     "segmento": "TEXT",
+}
+
+TIPOS_ORCAMENTOS = {
+    "projeto": "TEXT",
+    "orcamento_previsto": "REAL",
+    "data_inicio": "TEXT",
+    "prev_viabilidade": "TEXT",
+    "prev_qualidade": "TEXT",
+    "prev_aprov_lancamento": "TEXT",
+    "prev_lancamento": "TEXT",
+    "real_viabilidade": "TEXT",
+    "real_qualidade": "TEXT",
+    "real_aprov_lancamento": "TEXT",
+    "real_lancamento": "TEXT",
 }
 
 
@@ -87,6 +108,21 @@ def init_db() -> None:
                 importado_em TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 linhas       INTEGER
             );
+
+            CREATE TABLE IF NOT EXISTS orcamentos_cronograma (
+                projeto                 TEXT PRIMARY KEY,
+                orcamento_previsto      REAL DEFAULT 0,
+                data_inicio             TEXT,
+                prev_viabilidade        TEXT,
+                prev_qualidade          TEXT,
+                prev_aprov_lancamento   TEXT,
+                prev_lancamento         TEXT,
+                real_viabilidade        TEXT,
+                real_qualidade          TEXT,
+                real_aprov_lancamento   TEXT,
+                real_lancamento         TEXT,
+                atualizado_em           TEXT DEFAULT (datetime('now','localtime'))
+            );
         """)
 
 
@@ -97,13 +133,12 @@ def migrar_db() -> None:
     """
     with _conn() as con:
         for tabela, colunas, tipos in [
-            ("custos", COLUNAS_DB_CUSTOS, TIPOS_CUSTOS),
-            ("horas",  COLUNAS_DB_HORAS,  TIPOS_HORAS),
+            ("custos",                COLUNAS_DB_CUSTOS,      TIPOS_CUSTOS),
+            ("horas",                 COLUNAS_DB_HORAS,       TIPOS_HORAS),
+            ("orcamentos_cronograma", COLUNAS_DB_ORCAMENTOS,  TIPOS_ORCAMENTOS),
         ]:
-            # Lê colunas existentes
             cur = con.execute(f"PRAGMA table_info({tabela})")
             existentes = {row[1] for row in cur.fetchall()}
-
             for col in colunas:
                 if col not in existentes:
                     tipo = tipos.get(col, "TEXT")
@@ -111,7 +146,7 @@ def migrar_db() -> None:
 
 
 # ─────────────────────────────────────────────────────
-# Gravação
+# Gravação — custos e horas (sem alteração)
 # ─────────────────────────────────────────────────────
 
 def _ja_importado(arquivo: str, tipo: str) -> bool:
@@ -152,6 +187,51 @@ def salvar_horas(df: pd.DataFrame, nome_arquivo: str) -> tuple[int, bool]:
 
 
 # ─────────────────────────────────────────────────────
+# Gravação — orçamentos e cronograma (UPSERT)
+# ─────────────────────────────────────────────────────
+
+def salvar_orcamento(
+    projeto: str,
+    orcamento_previsto: float,
+    data_inicio: str | None,
+    prev_viabilidade: str | None,
+    prev_qualidade: str | None,
+    prev_aprov_lancamento: str | None,
+    prev_lancamento: str | None,
+    real_viabilidade: str | None,
+    real_qualidade: str | None,
+    real_aprov_lancamento: str | None,
+    real_lancamento: str | None,
+) -> None:
+    """Insere ou atualiza (UPSERT) o registro de orçamento/cronograma do projeto."""
+    with _conn() as con:
+        con.execute("""
+            INSERT INTO orcamentos_cronograma (
+                projeto, orcamento_previsto, data_inicio,
+                prev_viabilidade, prev_qualidade, prev_aprov_lancamento, prev_lancamento,
+                real_viabilidade, real_qualidade, real_aprov_lancamento, real_lancamento,
+                atualizado_em
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+            ON CONFLICT(projeto) DO UPDATE SET
+                orcamento_previsto      = excluded.orcamento_previsto,
+                data_inicio             = excluded.data_inicio,
+                prev_viabilidade        = excluded.prev_viabilidade,
+                prev_qualidade          = excluded.prev_qualidade,
+                prev_aprov_lancamento   = excluded.prev_aprov_lancamento,
+                prev_lancamento         = excluded.prev_lancamento,
+                real_viabilidade        = excluded.real_viabilidade,
+                real_qualidade          = excluded.real_qualidade,
+                real_aprov_lancamento   = excluded.real_aprov_lancamento,
+                real_lancamento         = excluded.real_lancamento,
+                atualizado_em           = datetime('now','localtime')
+        """, (
+            projeto, orcamento_previsto, data_inicio,
+            prev_viabilidade, prev_qualidade, prev_aprov_lancamento, prev_lancamento,
+            real_viabilidade, real_qualidade, real_aprov_lancamento, real_lancamento,
+        ))
+
+
+# ─────────────────────────────────────────────────────
 # Leitura
 # ─────────────────────────────────────────────────────
 
@@ -163,6 +243,25 @@ def carregar_custos() -> pd.DataFrame:
 def carregar_horas() -> pd.DataFrame:
     with _conn() as con:
         return pd.read_sql("SELECT * FROM horas", con)
+
+
+def carregar_orcamentos() -> pd.DataFrame:
+    """Retorna todos os registros da tabela orcamentos_cronograma."""
+    with _conn() as con:
+        return pd.read_sql("SELECT * FROM orcamentos_cronograma", con)
+
+
+def carregar_orcamento_projeto(projeto: str) -> dict | None:
+    """Retorna o registro de orçamento/cronograma de um projeto específico, ou None."""
+    with _conn() as con:
+        cur = con.execute(
+            "SELECT * FROM orcamentos_cronograma WHERE projeto = ?", (projeto,)
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
 
 
 def listar_importacoes() -> pd.DataFrame:
