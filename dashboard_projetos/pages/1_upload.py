@@ -163,9 +163,22 @@ st.divider()
 # ── Reset total ─────────────────────────────────────────────────────────────
 with st.expander("⚠️ Zona de perigo — apagar tudo"):
     st.warning("Esta ação remove **todos** os dados. Não pode ser desfeita.")
-    confirmacao = st.text_input("Digite CONFIRMAR para habilitar o botão")
+# 1. Inicializa a variável no session_state se ela não existir
+    if "texto_confirmacao" not in st.session_state:
+        st.session_state.texto_confirmacao = ""
+
+    # 2. Vincula o text_input ao session_state usando a propriedade 'key'
+    confirmacao = st.text_input(
+        "Digite CONFIRMAR para habilitar o botão", 
+        key="texto_confirmacao"
+    )
+    
     if st.button("🔥 Apagar todos os dados", disabled=(confirmacao != "CONFIRMAR"), type="secondary"):
+        # Executa as funções de limpeza que você já tem
         limpar_tudo()
         agregar_tudo.clear()
+        # 3. Limpa o texto limpando o valor diretamente no session_state
+        st.session_state.texto_confirmacao = ""
         st.success("Banco de dados limpo.")
+        # O st.rerun() agora serve apenas para re-renderizar a tela com o input já vazio
         st.rerun()
