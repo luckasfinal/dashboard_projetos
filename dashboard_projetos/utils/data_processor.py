@@ -182,7 +182,7 @@ def preparar_custos(df: pd.DataFrame) -> pd.DataFrame:
             .fillna(0)
         )
     if "centro_de_custo" in df.columns:
-        df["centro_de_custo"] = df["centro_de_custo"].astype(str).str.strip()
+        df["centro_de_custo"] = df["centro_de_custo"].astype(str).str.strip().str[:9]
     return df
 
 
