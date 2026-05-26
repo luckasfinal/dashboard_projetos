@@ -16,7 +16,7 @@ st.title("📊 Dashboard Financeiro")
 
 df_dashboard, df_custos_raw, df_horas_raw = agregar_tudo()
 
-if df.empty:
+if df_dashboard.empty
     st.warning("⚠️ Nenhum dado encontrado. Acesse **Upload de Planilhas** e importe seus arquivos.")
     st.stop()
 
