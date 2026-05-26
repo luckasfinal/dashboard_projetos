@@ -78,27 +78,6 @@ df_c_f = df_custos_raw[df_custos_raw["centro_de_custo"].isin(df_f["projeto"])] i
 df_h_f = df_horas_raw[df_horas_raw["c_custo"].isin(df_f["projeto"])] if not df_horas_raw.empty else df_horas_raw
 mes_col = "mes_ref" if "mes_ref" in df_c_f.columns else None
 
-# ── 3. Tabela Visual com Nome do Projeto (Gasto Não-Nulo) ──────────────────────
-if not df_filtrado.empty:
-    df_visual = df_filtrado[[
-        "projeto", 
-        "nome_projeto", 
-        "valor_total", 
-        "horas_total", 
-        "custo_por_hora"
-    ]].rename(columns={
-        "projeto": "Centro de Custo",
-        "nome_projeto": "Nome do Projeto",
-        "valor_total": "Realizado (R$)",
-        "horas_total": "Horas Acumuladas",
-        "custo_por_hora": "R$/h"
-    })
-
-    st.subheader("Análise de Projetos com Gastos Ativos")
-    st.dataframe(df_visual, use_container_width=True)
-else:
-    st.info("Nenhum projeto encontrado para os filtros selecionados.")
-
 # ── KPIs ─────────────────────────────────────────────────────────────────────
 st.subheader("Visão Geral")
 k1, k2, k3, k4 = st.columns(4)
@@ -134,6 +113,28 @@ if not df_c_f.empty and mes_col:
     st.plotly_chart(charts.grafico_evolucao_mensal(df_c_f, df_h_f, mes_col), width="stretch")
 
 st.divider()
+
+# ── 3. Tabela Visual com Nome do Projeto (Gasto Não-Nulo) ──────────────────────
+if not df_filtrado.empty:
+    df_visual = df_filtrado[[
+        "projeto", 
+        "nome_projeto", 
+        "valor_total", 
+        "horas_total", 
+        "custo_por_hora"
+    ]].rename(columns={
+        "projeto": "Centro de Custo",
+        "nome_projeto": "Nome do Projeto",
+        "valor_total": "Realizado (R$)",
+        "horas_total": "Horas Acumuladas",
+        "custo_por_hora": "R$/h"
+    })
+
+    st.subheader("Análise de Projetos com Gastos Ativos")
+    st.dataframe(df_visual, use_container_width=True)
+else:
+    st.info("Nenhum projeto encontrado para os filtros selecionados.")
+
 
 # ── Tabela resumo ─────────────────────────────────────────────────────────────
 st.subheader("Tabela Resumo por Centro de Custo")
