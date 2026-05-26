@@ -15,54 +15,62 @@ st.title("📊 Dashboard Financeiro")
 # 1. Carrega os dados processados e consolidados do banco
 df_dashboard, df_custos_raw, df_horas_raw = agregar_tudo()
 
-# CORREÇÃO: Adicionado o ':' que faltava na validação
 if df_dashboard.empty:
     st.warning("⚠️ Nenhum dado encontrado. Acesse **Upload de Planilhas** e importe seus arquivos.")
     st.stop()
 
-# ── Sidebar (Filtros) ─────────────────────────────────────────────────────────
+# ── Sidebar (Filtros em Linhas e Multi-seleção) ───────────────────────────────
 with st.sidebar:
     st.header("🔍 Filtros")
-    # Criamos 3 colunas para colocar os filtros lado a lado na horizontal na barra lateral
-    col1, col2, col3 = st.columns(3)
     
-    with col1:
-        # Filtro de Projeto
-        lista_projetos = ["Todos"] + sorted(df_dashboard["nome_projeto"].dropna().unique().tolist())
-        projeto_selecionado = st.selectbox("Projeto:", options=lista_projetos)
-        
-    with col2:
-        # Filtro de Ano
-        if "ano" in df_custos_raw.columns:
-            lista_anos = ["Todos"] + sorted(df_custos_raw["ano"].dropna().astype(str).unique().tolist())
-        else:
-            lista_anos = ["Todos"]
-        ano_selecionado = st.selectbox("Ano:", options=lista_anos)
-        
-    with col3:
-        # Filtro de Mês
-        if "mes" in df_custos_raw.columns:
-            lista_meses = ["Todos"] + sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolist())
-        else:
-            lista_meses = ["Todos"]
-        mes_selecionado = st.selectbox("Mês:", options=lista_meses)
+    # Filtro 1: Projeto (Mudado para multiselect em uma linha própria)
+    lista_projetos = sorted(df_dashboard["nome_projeto"].dropna().unique().tolist())
+    projetos_selecionados = st.multiselect(
+        "Selecione os Projetos:", 
+        options=lista_projetos,
+        default=[] # Vazio por padrão significa que não está filtrando nada (mostra tudo)
+    )
+    
+    # Filtro 2: Ano (Em uma linha própria)
+    if "ano" in df_custos_raw.columns:
+        lista_anos = sorted(df_custos_raw["ano"].dropna().astype(str).unique().tolist())
+    else:
+        lista_anos = []
+    anos_selecionados = st.multiselect(
+        "Selecione os Anos:", 
+        options=lista_anos,
+        default=[]
+    )
+    
+    # Filtro 3: Mês (Em uma linha própria)
+    if "mes" in df_custos_raw.columns:
+        lista_meses = sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolist())
+    else:
+        lista_meses = []
+    meses_selecionados = st.multiselect(
+        "Selecione os Meses:", 
+        options=lista_meses,
+        default=[]
+    )
 
-# ── 2. Aplicação em cascata dos filtros (Fora da Sidebar) ─────────────────────
+# ── 2. Aplicação dos filtros Multi-seleção (Fora da Sidebar) ──────────────────
 df_filtrado = df_dashboard.copy()
 
-# Aplicando o filtro de projeto
-if projeto_selecionado != "Todos":
-    df_filtrado = df_filtrado[df_filtrado["nome_projeto"] == projeto_selecionado]
+# Aplicando filtro multi-seleção de projeto
+if projetos_selecionados:
+    df_filtrado = df_filtrado[df_filtrado["nome_projeto"].isin(projetos_selecionados)]
     
-# Aplicando o filtro de ano
-if ano_selecionado != "Todos" and "ano" in df_custos_raw.columns:
-    projetos_no_ano = df_custos_raw[df_custos_raw["ano"].astype(str) == ano_selecionado]["centro_de_custo"].unique()
-    df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_no_ano)]
+# Aplicando filtro multi-seleção de ano
+if anos_selecionados and "ano" in df_custos_raw.columns:
+    # Filtra na base bruta quais centros de custo tiveram movimentação nos anos escolhidos
+    projetos_nos_anos = df_custos_raw[df_custos_raw["ano"].astype(str).isin(anos_selecionados)]["centro_de_custo"].unique()
+    df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_nos_anos)]
     
-# Aplicando o filtro de mês
-if mes_selecionado != "Todos" and "mes" in df_custos_raw.columns:
-    projetos_no_mes = df_custos_raw[df_custos_raw["mes"].astype(str) == mes_selecionado]["centro_de_custo"].unique()
-    df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_no_mes)]
+# Aplicando filtro multi-seleção de mês
+if meses_selecionados and "mes" in df_custos_raw.columns:
+    # Filtra na base bruta quais centros de custo tiveram movimentação nos meses escolhidos
+    projetos_nos_meses = df_custos_raw[df_custos_raw["mes"].astype(str).isin(meses_selecionados)]["centro_de_custo"].unique()
+    df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_nos_meses)]
 
 # Mapeia os DataFrames brutos filtrados para manter a compatibilidade com seus gráficos originais
 df_f = df_filtrado
