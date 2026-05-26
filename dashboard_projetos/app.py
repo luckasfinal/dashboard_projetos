@@ -22,8 +22,9 @@ init_db()
 migrar_db()
 
 pages = {
-    "📤 Upload de Planilhas": [
-        st.Page(str(ROOT / "pages" / "1_upload.py"), title="Upload de Planilhas", icon="📤"),
+    "📤 Dados": [
+        st.Page(str(ROOT / "pages" / "0_orcamento.py"), title="Orçamentos", icon="📋"),
+        st.Page(str(ROOT / "pages" / "1_upload.py"), title="Upload de Arquivos", icon="📤"),
     ],
     "📊 Análises": [
         st.Page(str(ROOT / "pages" / "2_dashboard.py"), title="Dashboard Financeiro",   icon="📊"),
