@@ -106,10 +106,11 @@ MAP_HORAS = {
 COLUNAS_CUSTOS = {
     "centro_de_custo": str,
     "realizado":       float,
-    "mes":             str,
-    "ano":             str,
+    "mes":              str,
+    "ano":              str,
 }
 
+# Mudança estratégica: aceitar variações comuns tratadas na limpeza
 COLUNAS_HORAS = {
     "c_custo":  str,
     "hs_nor":   float,
@@ -140,8 +141,8 @@ def ler_planilha_bytes(conteudo: bytes, nome: str) -> pd.DataFrame:
         df = pd.read_csv(io.BytesIO(conteudo), sep=None, engine="python")
     else:
         df = pd.read_excel(io.BytesIO(conteudo))
-    # Garante que TODOS os nomes de colunas são string pura
-    df.columns = [str(c) for c in df.columns]
+    # Garante que TODOS os nomes de colunas são string pura e sem espaços nas extremidades
+    df.columns = [str(c).strip() for c in df.columns]
     return df
 
 
@@ -152,31 +153,15 @@ def _aplicar_mapa(df: pd.DataFrame, mapa: dict) -> pd.DataFrame:
         chave = _normalizar_header(col)
         if chave in mapa:
             rename[col] = mapa[chave]
+        else:
+            # CORREÇÃO: Fallback inteligente individual apenas para colunas fora do mapa
+            rename[col] = _remover_acentos(col).strip().lower().replace(" ", "_").replace(".", "_").replace("-", "_")
     return df.rename(columns=rename)
-
-
-def normalizar_colunas(df: pd.DataFrame) -> pd.DataFrame:
-    """Fallback: snake_case simples para colunas que não estão no mapa."""
-    df = df.copy()
-    df.columns = [
-        _remover_acentos(c).strip().lower()
-         .replace(" ", "_").replace(".", "_").replace("-", "_")
-        for c in df.columns
-    ]
-    return df
-
-
-def validar_colunas(df: pd.DataFrame, esperadas: dict, nome: str) -> list[str]:
-    faltando = [c for c in esperadas if c not in df.columns]
-    if faltando:
-        return [f"**{nome}** — colunas ausentes após mapeamento: `{', '.join(faltando)}`"]
-    return []
 
 
 def preparar_custos(df: pd.DataFrame) -> pd.DataFrame:
     df = _aplicar_mapa(df, MAP_CUSTOS)
-    # Fallback para colunas que não bateram no mapa
-    df = normalizar_colunas(df)
+    
     # Limpa separador de milhar e converte realizado
     if "realizado" in df.columns:
         df["realizado"] = (
@@ -193,7 +178,7 @@ def preparar_custos(df: pd.DataFrame) -> pd.DataFrame:
 
 def preparar_horas(df: pd.DataFrame) -> pd.DataFrame:
     df = _aplicar_mapa(df, MAP_HORAS)
-    df = normalizar_colunas(df)
+    
     if "hs_nor" in df.columns:
         df["hs_nor"] = (
             df["hs_nor"].astype(str)
@@ -204,6 +189,13 @@ def preparar_horas(df: pd.DataFrame) -> pd.DataFrame:
     if "c_custo" in df.columns:
         df["c_custo"] = df["c_custo"].astype(str).str.strip()
     return df
+
+
+def validar_colunas(df: pd.DataFrame, esperadas: dict, nome: str) -> list[str]:
+    faltando = [c for c in esperadas if c not in df.columns]
+    if faltando:
+        return [f"**{nome}** — colunas ausentes após mapeamento: `{', '.join(faltando)}`"]
+    return []
 
 
 # ─────────────────────────────────────────────
