@@ -4,6 +4,7 @@ _ROOT = Path(__file__).parent.parent.resolve()
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+import pandas as pd
 import streamlit as st
 from utils.db import init_db
 from utils.data_processor import agregar_tudo, formata_brl, cor_status
