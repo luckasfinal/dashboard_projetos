@@ -12,8 +12,10 @@ from utils import charts
 init_db()
 st.title("📈 Andamento dos Projetos")
 
-df, df_custos, df_horas = agregar_tudo()
+# CORREÇÃO: Desempacota os 3 valores que a função agregar_tudo() agora retorna
+df, df_custos_raw, df_horas_raw = agregar_tudo()
 
+# Garante que o aplicativo pare de rodar se não houver dados no banco
 if df.empty:
     st.warning("⚠️ Nenhum dado encontrado. Acesse **Upload de Planilhas** e importe seus arquivos.")
     st.stop()
