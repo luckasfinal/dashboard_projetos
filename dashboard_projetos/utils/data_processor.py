@@ -310,7 +310,7 @@ def agregar_tudo() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
     # Se a coluna 'nome_projeto' ficou zerada por causa do fillna(0) em linhas que só tinham custos, ajustamos para string legível
     if "nome_projeto" in merged.columns:
-        merged["nome_projeto"] = merged["nome_projeto"].replace(0, "Sem descrição de horas")
+        merged["nome_projeto"] = merged["nome_projeto"].replace(0, "Descrição do projeto não disponível")
 
     return merged, df_custos, df_horas
 
