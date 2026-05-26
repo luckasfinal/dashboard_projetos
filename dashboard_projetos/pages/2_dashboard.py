@@ -122,32 +122,45 @@ total_custo   = df_f["valor_total"].sum()
 total_horas   = df_f["horas_total"].sum()
 custo_h_medio = total_custo / total_horas if total_horas > 0 else 0
 n_projetos    = len(df_f)
-# CÓDIGO ATUALIZADO E CORRIGIDO PARA O CÁLCULO DA DATA:
+
+# CÓDIGO CORRIGIDO COM FILTRO TEMPORAL DIRETO NAS HORAS:
 data_mais_antiga_str = "N/D"
 if not df_horas_raw.empty and "periodo" in df_horas_raw.columns:
     try:
-        # Garante o import do pandas caso não esteja no topo do arquivo
         import pandas as pd 
         
-        # 1. Filtra os projetos ativos
+        # 1. Filtra primeiro pelos projetos que estão ativos na tela
         df_horas_filtrado = df_horas_raw[df_horas_raw["c_custo"].isin(df_f["projeto"])]
         
+        # 2. SE houver filtro de Ano ativo (anos_selecionados veio da sidebar)
+        if "anos_selecionados" in locals() and anos_selecionados:
+            # Tenta filtrar pela coluna 'ano' na tabela de horas se ela existir, 
+            # ou extrai o ano do campo 'periodo' para validar
+            if "ano" in df_horas_filtrado.columns:
+                df_horas_filtrado = df_horas_filtrado[df_horas_filtrado["ano"].astype(str).isin(anos_selecionados)]
+            else:
+                # Caso a tabela de horas não tenha coluna própria de ano, filtramos convertendo o período
+                df_horas_filtrado["_ano_temp"] = pd.to_datetime(df_horas_filtrado["periodo"], dayfirst=True, errors="coerce").dt.year.astype(str)
+                df_horas_filtrado = df_horas_filtrado[df_horas_filtrado["_ano_temp"].isin(anos_selecionados)]
+
+        # 3. SE houver filtro de Mês ativo (meses_selecionados veio da sidebar)
+        if "meses_selecionados" in locals() and meses_selecionados:
+            if "mes" in df_horas_filtrado.columns:
+                df_horas_filtrado = df_horas_filtrado[df_horas_filtrado["mes"].astype(str).isin(meses_selecionados)]
+
+        # 4. Converte e encontra a menor data do resultado estritamente filtrado
         if not df_horas_filtrado.empty:
-            # 2. Tenta converter especificando os formatos mais comuns (PT-BR e ISO)
-            # O argumento 'dayfirst=True' resolve o problema de inverter dia com mês
             datas_validas = pd.to_datetime(
                 df_horas_filtrado["periodo"], 
                 dayfirst=True, 
                 errors="coerce"
             )
-            
-            # 3. Extrai a menor data válida
             menor_data = datas_validas.dropna().min()
             if not pd.isna(menor_data):
                 data_mais_antiga_str = menor_data.strftime("%d/%m/%Y")
+                
     except Exception as e:
-        # Exibe o erro real no console do Streamlit Cloud/Terminal para diagnóstico se ainda falhar
-        print(f"Erro detalhado na conversão de data: {e}")
+        print(f"Erro detalhado no filtro de data: {e}")
         data_mais_antiga_str = "Erro no formato"
 
 k1.metric("💰 Realizado Total",  formata_brl(total_custo))
