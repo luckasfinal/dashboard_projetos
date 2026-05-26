@@ -29,7 +29,7 @@ with st.sidebar:
     projetos_selecionados = st.multiselect(
         "Selecione os Projetos:", 
         options=lista_projetos,
-        default=[]  # Vazio por padrão significa que não está filtrando nada (mostra tudo)
+        default=lista_projetos  # Vazio por padrão significa que não está filtrando nada (mostra tudo)
     )
     
     # Filtro 2: Ano
@@ -40,7 +40,7 @@ with st.sidebar:
     anos_selecionados = st.multiselect(
         "Selecione os Anos:", 
         options=lista_anos,
-        default=[]
+        default=lista_anos
     )
     
     # Filtro 3: Mês
@@ -51,7 +51,7 @@ with st.sidebar:
     meses_selecionados = st.multiselect(
         "Selecione os Meses:", 
         options=lista_meses,
-        default=[]
+        default=lista_meses
     )
 
 # ── 2. Aplicação em cascata dos filtros Multi-seleção ─────────────────────────
