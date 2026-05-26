@@ -161,24 +161,40 @@ else:
 st.divider()
 
 # ── Reset total ─────────────────────────────────────────────────────────────
+# ── Reset total ─────────────────────────────────────────────────────────────
 with st.expander("⚠️ Zona de perigo — apagar tudo"):
     st.warning("Esta ação remove **todos** os dados. Não pode ser desfeita.")
-# 1. Inicializa a variável no session_state se ela não existir
+    
+    # 1. Criamos uma função de callback dedicada para limpar o banco e o input com segurança
+    def callback_apagar_dados():
+        # Executa as suas funções originais de limpeza
+        limpar_tudo()
+        agregar_tudo.clear()
+        
+        # Agora limpamos o input de forma segura dentro do ciclo de execução do Streamlit
+        st.session_state["texto_confirmacao"] = ""
+        st.toast("Banco de dados limpo com sucesso!", icon="🔥")
+
+    # 2. Inicializa a variável no session_state se ela não existir
     if "texto_confirmacao" not in st.session_state:
         st.session_state.texto_confirmacao = ""
 
-    # 2. Vincula o text_input ao session_state usando a propriedade 'key'
+    # 3. Vincula o text_input ao session_state usando a propriedade 'key'
     confirmacao = st.text_input(
         "Digite CONFIRMAR para habilitar o botão", 
         key="texto_confirmacao"
     )
     
-    if st.button("🔥 Apagar todos os dados", disabled=(confirmacao != "CONFIRMAR"), type="secondary"):
-        # Executa as funções de limpeza que você já tem
-        limpar_tudo()
-        agregar_tudo.clear()
-        # 3. Limpa o texto limpando o valor diretamente no session_state
-        st.session_state.texto_confirmacao = ""
-        st.success("Banco de dados limpo.")
-        # O st.rerun() agora serve apenas para re-renderizar a tela com o input já vazio
+    # Valida se o usuário escreveu exatamente "CONFIRMAR"
+    botao_desabilitado = (confirmacao != "CONFIRMAR")
+
+    # 4. Passamos a função para o parâmetro 'on_click'. O Streamlit cuidará do ciclo de vida sem estourar o erro.
+    if st.button(
+        "🔥 Apagar todos os dados", 
+        disabled=botao_desabilitado, 
+        type="secondary",
+        on_click=callback_apagar_dados
+    ):
+        # Como o callback já limpou os dados e o estado do input antes da página recarregar,
+        # basta disparar o rerun para atualizar a interface com o campo limpo!
         st.rerun()
