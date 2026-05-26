@@ -110,7 +110,6 @@ COLUNAS_CUSTOS = {
     "ano":              str,
 }
 
-# Mudança estratégica: aceitar variações comuns tratadas na limpeza
 COLUNAS_HORAS = {
     "c_custo":  str,
     "hs_nor":   float,
@@ -131,18 +130,25 @@ def _remover_acentos(s: str) -> str:
 
 
 def _normalizar_header(col) -> str:
-    """Remove acentos, caixa baixa, strip — para comparação com o mapa."""
-    return _remover_acentos(str(col).strip().lower())
+    """Remove acentos, caixa baixa, strip e caracteres invisíveis de BOM."""
+    s = str(col).strip().lower()
+    # Remove o caractere invisível de BOM se existir
+    if s.startswith("\ufeff"):
+        s = s.replace("\ufeff", "")
+    return _remover_acentos(s)
 
 
 def ler_planilha_bytes(conteudo: bytes, nome: str) -> pd.DataFrame:
-    """Lê o arquivo e força os nomes de colunas para string (evita datetime em headers)."""
+    """Lê o arquivo tratando hífens, ponto-e-vírgula e a codificação UTF-8 com BOM."""
     if nome.lower().endswith(".csv"):
-        df = pd.read_csv(io.BytesIO(conteudo), sep=None, engine="python")
+        # CORREÇÃO: decoding manual com 'utf-8-sig' para eliminar o caractere invisível BOM (\ufeff)
+        texto = conteudo.decode("utf-8-sig", errors="ignore")
+        df = pd.read_csv(io.StringIO(texto), sep=";", engine="python")
     else:
         df = pd.read_excel(io.BytesIO(conteudo))
-    # Garante que TODOS os nomes de colunas são string pura e sem espaços nas extremidades
-    df.columns = [str(c).strip() for c in df.columns]
+        
+    # Garante que TODOS os nomes de colunas são string pura e limpa
+    df.columns = [str(c).strip().replace("\ufeff", "") for c in df.columns]
     return df
 
 
@@ -154,7 +160,7 @@ def _aplicar_mapa(df: pd.DataFrame, mapa: dict) -> pd.DataFrame:
         if chave in mapa:
             rename[col] = mapa[chave]
         else:
-            # CORREÇÃO: Fallback inteligente individual apenas para colunas fora do mapa
+            # Fallback inteligente individual apenas para colunas fora do mapa
             rename[col] = _remover_acentos(col).strip().lower().replace(" ", "_").replace(".", "_").replace("-", "_")
     return df.rename(columns=rename)
 
