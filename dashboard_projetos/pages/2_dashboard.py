@@ -112,62 +112,63 @@ if not df_filtrado.empty:
 else:
     st.info("Nenhum projeto encontrado para os filtros selecionados.")
 
-# ── KPIs ──────────────────────────────────────────────────────────────────────
+# ── KPIs (Correção: Cálculos baseados nos filtros temporais de custos e horas) ──
 st.subheader("Visão Geral")
-k1, k2 = st.columns(2)
-k3, k4 = st.columns(2)
-k5 = st.columns(1)[0]
 
-total_custo   = df_f["valor_total"].sum()
-total_horas   = df_f["horas_total"].sum()
+# 1. Aplica os filtros temporais rigorosamente na base de custos para calcular o Realizado Total
+df_custos_filtrado = df_custos_raw[df_custos_raw["centro_de_custo"].isin(df_f["projeto"])]
+if "anos_selecionados" in locals() and anos_selecionados:
+    if "ano" in df_custos_filtrado.columns:
+        df_custos_filtrado = df_custos_filtrado[df_custos_filtrado["ano"].astype(str).isin(anos_selecionados)]
+if "meses_selecionados" in locals() and meses_selecionados:
+    if "mes" in df_custos_filtrado.columns:
+        df_custos_filtrado = df_custos_filtrado[df_custos_filtrado["mes"].astype(str).isin(meses_selecionados)]
+
+total_custo = df_custos_filtrado["realizado"].sum() if not df_custos_filtrado.empty else 0.0
+
+# 2. Aplica os filtros temporais rigorosamente na base de horas para calcular as Horas Totais
+df_horas_filtrado = df_horas_raw[df_horas_raw["c_custo"].isin(df_f["projeto"])]
+if "anos_selecionados" in locals() and anos_selecionados:
+    if "ano" in df_horas_filtrado.columns:
+        df_horas_filtrado = df_horas_filtrado[df_horas_filtrado["ano"].astype(str).isin(anos_selecionados)]
+    else:
+        df_horas_filtrado["_ano_temp"] = pd.to_datetime(df_horas_filtrado["periodo"], dayfirst=True, errors="coerce").dt.year.astype(str)
+        df_horas_filtrado = df_horas_filtrado[df_horas_filtrado["_ano_temp"].isin(anos_selecionados)]
+if "meses_selecionados" in locals() and meses_selecionados:
+    if "mes" in df_horas_filtrado.columns:
+        df_horas_filtrado = df_horas_filtrado[df_horas_filtrado["mes"].astype(str).isin(meses_selecionados)]
+
+total_horas = df_horas_filtrado["hs_nor"].sum() if not df_horas_filtrado.empty else 0.0
+
+# 3. Cálculos derivados dos KPIs
 custo_h_medio = total_custo / total_horas if total_horas > 0 else 0
 n_projetos    = len(df_f)
 
-# CÓDIGO CORRIGIDO COM FILTRO TEMPORAL DIRETO NAS HORAS:
+# 4. Busca a data de apontamento mais antiga do bloco já filtrado
 data_mais_antiga_str = "N/D"
-if not df_horas_raw.empty and "periodo" in df_horas_raw.columns:
+if not df_horas_filtrado.empty and "periodo" in df_horas_filtrado.columns:
     try:
-        import pandas as pd 
-        
-        # 1. Filtra primeiro pelos projetos que estão ativos na tela
-        df_horas_filtrado = df_horas_raw[df_horas_raw["c_custo"].isin(df_f["projeto"])]
-        
-        # 2. SE houver filtro de Ano ativo (anos_selecionados veio da sidebar)
-        if "anos_selecionados" in locals() and anos_selecionados:
-            # Tenta filtrar pela coluna 'ano' na tabela de horas se ela existir, 
-            # ou extrai o ano do campo 'periodo' para validar
-            if "ano" in df_horas_filtrado.columns:
-                df_horas_filtrado = df_horas_filtrado[df_horas_filtrado["ano"].astype(str).isin(anos_selecionados)]
-            else:
-                # Caso a tabela de horas não tenha coluna própria de ano, filtramos convertendo o período
-                df_horas_filtrado["_ano_temp"] = pd.to_datetime(df_horas_filtrado["periodo"], dayfirst=True, errors="coerce").dt.year.astype(str)
-                df_horas_filtrado = df_horas_filtrado[df_horas_filtrado["_ano_temp"].isin(anos_selecionados)]
-
-        # 3. SE houver filtro de Mês ativo (meses_selecionados veio da sidebar)
-        if "meses_selecionados" in locals() and meses_selecionados:
-            if "mes" in df_horas_filtrado.columns:
-                df_horas_filtrado = df_horas_filtrado[df_horas_filtrado["mes"].astype(str).isin(meses_selecionados)]
-
-        # 4. Converte e encontra a menor data do resultado estritamente filtrado
-        if not df_horas_filtrado.empty:
-            datas_validas = pd.to_datetime(
-                df_horas_filtrado["periodo"], 
-                dayfirst=True, 
-                errors="coerce"
-            )
-            menor_data = datas_validas.dropna().min()
-            if not pd.isna(menor_data):
-                data_mais_antiga_str = menor_data.strftime("%d/%m/%Y")
-                
-    except Exception as e:
-        print(f"Erro detalhado no filtro de data: {e}")
+        datas_validas = pd.to_datetime(df_horas_filtrado["periodo"], dayfirst=True, errors="coerce")
+        menor_data = datas_validas.dropna().min()
+        if not pd.isna(menor_data):
+            data_mais_antiga_str = menor_data.strftime("%d/%m/%Y")
+    except Exception:
         data_mais_antiga_str = "Erro no formato"
 
-k1.metric("💰 Realizado Total",  formata_brl(total_custo))
-k2.metric("⏱️ Horas Totais",     f"{total_horas:,.0f} h")
-k3.metric("📐 Custo Médio/Hora", formata_brl(custo_h_medio))
-k4.metric("📁 Projetos (CC)",    str(n_projetos))
-k5.metric("📅 Apontamento Mais Antigo", data_mais_antiga_str)
+# ── Renderização dos KPIs na Tela (3 Linhas) ──────────────────────────────────
+# Primeira Linha: Realizado e Horas (Agora dinâmicos por Ano/Mês)
+k1, k2 = st.columns(2)
+k1.metric("💰 Realizado Total",    formata_brl(total_custo))
+k2.metric("⏱️ Horas Totais",       f"{total_horas:,.0f} h")
+
+# Segunda Linha: Custo Médio e Quantidade de Projetos
+k3, k4 = st.columns(2)
+k3.metric("📐 Custo Médio/Hora",   formata_brl(custo_h_medio))
+k4.metric("📁 Projetos (CC)",      str(n_projetos))
+
+# Terceira Linha: Data de Apontamento Mais Antiga
+k5 = st.columns(1)[0]
+k5.metric("📅 Apontamento Mais Antigo (Filtrado)", data_mais_antiga_str)
 
 st.divider()
 
