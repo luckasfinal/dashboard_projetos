@@ -116,16 +116,33 @@ else:
 st.subheader("Visão Geral")
 k1, k2 = st.columns(2)
 k3, k4 = st.columns(2)
+k5 = st.columns(1)[0]
 
 total_custo   = df_f["valor_total"].sum()
 total_horas   = df_f["horas_total"].sum()
 custo_h_medio = total_custo / total_horas if total_horas > 0 else 0
 n_projetos    = len(df_f)
+# CÁLCULO DINÂMICO: Filtra as horas brutas com base nos projetos que passaram pelo filtro da sidebar
+data_mais_antiga_str = "N/D"
+if not df_horas_raw.empty and "periodo" in df_horas_raw.columns:
+    try:
+        # 1. Filtra para manter apenas as linhas dos projetos selecionados/ativos na tela
+        df_horas_filtrado = df_horas_raw[df_horas_raw["c_custo"].isin(df_f["projeto"])]
+        
+        # 2. Converte a coluna de período para datetime
+        datas_validas = pd.to_datetime(df_horas_filtrado["periodo"], errors="coerce")
+        
+        # 3. Extrai a menor data do conjunto filtrado
+        if not datas_validas.dropna().empty:
+            data_mais_antiga_str = datas_validas.min().strftime("%d/%m/%Y")
+    except Exception:
+        data_mais_antiga_str = "Erro ao ler data"
 
 k1.metric("💰 Realizado Total",  formata_brl(total_custo))
 k2.metric("⏱️ Horas Totais",     f"{total_horas:,.0f} h")
 k3.metric("📐 Custo Médio/Hora", formata_brl(custo_h_medio))
 k4.metric("📁 Projetos (CC)",    str(n_projetos))
+k5.metric("📅 Apontamento Mais Antigo", data_mais_antiga_str)
 
 st.divider()
 
