@@ -122,21 +122,33 @@ total_custo   = df_f["valor_total"].sum()
 total_horas   = df_f["horas_total"].sum()
 custo_h_medio = total_custo / total_horas if total_horas > 0 else 0
 n_projetos    = len(df_f)
-# CÁLCULO DINÂMICO: Filtra as horas brutas com base nos projetos que passaram pelo filtro da sidebar
+# CÓDIGO ATUALIZADO E CORRIGIDO PARA O CÁLCULO DA DATA:
 data_mais_antiga_str = "N/D"
 if not df_horas_raw.empty and "periodo" in df_horas_raw.columns:
     try:
-        # 1. Filtra para manter apenas as linhas dos projetos selecionados/ativos na tela
+        # Garante o import do pandas caso não esteja no topo do arquivo
+        import pandas as pd 
+        
+        # 1. Filtra os projetos ativos
         df_horas_filtrado = df_horas_raw[df_horas_raw["c_custo"].isin(df_f["projeto"])]
         
-        # 2. Converte a coluna de período para datetime
-        datas_validas = pd.to_datetime(df_horas_filtrado["periodo"], errors="coerce")
-        
-        # 3. Extrai a menor data do conjunto filtrado
-        if not datas_validas.dropna().empty:
-            data_mais_antiga_str = datas_validas.min().strftime("%d/%m/%Y")
-    except Exception:
-        data_mais_antiga_str = "Erro ao ler data"
+        if not df_horas_filtrado.empty:
+            # 2. Tenta converter especificando os formatos mais comuns (PT-BR e ISO)
+            # O argumento 'dayfirst=True' resolve o problema de inverter dia com mês
+            datas_validas = pd.to_datetime(
+                df_horas_filtrado["periodo"], 
+                dayfirst=True, 
+                errors="coerce"
+            )
+            
+            # 3. Extrai a menor data válida
+            menor_data = datas_validas.dropna().min()
+            if not pd.isna(menor_data):
+                data_mais_antiga_str = menor_data.strftime("%d/%m/%Y")
+    except Exception as e:
+        # Exibe o erro real no console do Streamlit Cloud/Terminal para diagnóstico se ainda falhar
+        print(f"Erro detalhado na conversão de data: {e}")
+        data_mais_antiga_str = "Erro no formato"
 
 k1.metric("💰 Realizado Total",  formata_brl(total_custo))
 k2.metric("⏱️ Horas Totais",     f"{total_horas:,.0f} h")
