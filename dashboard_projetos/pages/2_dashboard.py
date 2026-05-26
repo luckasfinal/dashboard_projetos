@@ -8,6 +8,8 @@ import streamlit as st
 from utils.db import init_db
 from utils.data_processor import agregar_tudo, formata_brl, cor_status
 from utils import charts
+# Importa a função que atualizamos no data_processor
+from data_processor import agregar_tudo
 
 init_db()
 st.title("📊 Dashboard Financeiro")
@@ -127,11 +129,34 @@ fmt = {
 def colorir_realizado(val):
     return ""  # sem dependência externa
 
-st.dataframe(
-    tabela.style.format(fmt),
-    width="stretch",
-    hide_index=True,
-)
+# 1. Busca os dados consolidados e já filtrados (apenas maiores que zero)
+df_dashboard, _, _ = agregar_tudo()
+
+# 2. Verifica se o DataFrame não está vazio para evitar erros na tela
+if not df_dashboard.empty:
+    
+    # 3. Filtra e reordena as colunas para o usuário, incluindo o novo 'nome_projeto'
+    df_visual = df_dashboard[[
+        "projeto", 
+        "nome_projeto", 
+        "valor_total", 
+        "horas_total", 
+        "custo_por_hora"
+    ]].rename(columns={
+        "projeto": "Centro de Custo",
+        "nome_projeto": "Nome do Projeto",
+        "valor_total": "Realizado (R$)",
+        "horas_total": "Horas Acumuladas",
+        "custo_por_hora": "R$/h"
+    })
+
+    st.subheader("Análise de Projetos com Gastos Ativos")
+    
+    # 4. Exibe a tabela formatada ocupando a largura total da tela
+    st.dataframe(df_visual, use_container_width=True)
+
+else:
+    st.info("Nenhum projeto com gasto não-nulo encontrado no momento.")
 
 csv = tabela.to_csv(index=False).encode("utf-8")
 st.download_button("⬇️ Exportar CSV", csv, "resumo_projetos.csv", "text/csv")
