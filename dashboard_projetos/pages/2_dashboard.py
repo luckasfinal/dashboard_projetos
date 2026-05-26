@@ -14,7 +14,7 @@ from data_processor import agregar_tudo
 init_db()
 st.title("📊 Dashboard Financeiro")
 
-df, df_custos, df_horas = agregar_tudo()
+df_dashboard, df_custos_raw, df_horas_raw = agregar_tudo()
 
 if df.empty:
     st.warning("⚠️ Nenhum dado encontrado. Acesse **Upload de Planilhas** e importe seus arquivos.")
@@ -23,44 +23,70 @@ if df.empty:
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("🔍 Filtros")
-    projetos_all = sorted(df["projeto"].unique().tolist())
-    projetos_sel = st.multiselect("Centro de Custo / Projeto", projetos_all, default=projetos_all)
+    # Criamos 3 colunas para colocar os filtros lado a lado na horizontal
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Filtro de Projeto
+        lista_projetos = ["Todos"] + sorted(df_dashboard["nome_projeto"].dropna().unique().tolist())
+        projeto_selecionado = st.selectbox("Selecione o Projeto:", options=lista_projetos)
+        
+    with col2:
+        # Filtro de Ano
+        # Tenta buscar os anos da base de custos, caso não existam, deixa 'Todos'
+        if "ano" in df_custos_raw.columns:
+            lista_anos = ["Todos"] + sorted(df_custos_raw["ano"].dropna().astype(str).unique().tolist())
+        else:
+            lista_anos = ["Todos"]
+        ano_selecionado = st.selectbox("Selecione o Ano:", options=lista_anos)
+        
+    with col3:
+        # Filtro de Mês
+        if "mes" in df_custos_raw.columns:
+            lista_meses = ["Todos"] + sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolist())
+        else:
+            lista_meses = ["Todos"]
+        mes_selecionado = st.selectbox("Selecione o Mês:", options=lista_meses)
 
-    # Filtro por mês (usa mes_ref gerado no processor)
-    meses_all = []
-    if "mes_ref" in df_custos.columns:
-        meses_all = sorted(df_custos["mes_ref"].dropna().unique().tolist())
-    elif "mes" in df_custos.columns:
-        meses_all = sorted(df_custos["mes"].dropna().unique().tolist())
-    meses_sel = st.multiselect("Mês de referência", meses_all, default=meses_all) if meses_all else []
+    # 2. Aplicação em cascata dos filtros no DataFrame principal
+    df_filtrado = df_dashboard.copy()
+    
+    # Aplicando o filtro de projeto
+    if proyecto_selecionado != "Todos":
+        df_filtrado = df_filtrado[df_filtrado["nome_projeto"] == proyecto_selecionado]
+        
+    # Aplicando o filtro de ano (utilizando as referências temporárias cruzadas se necessário)
+    if ano_selecionado != "Todos" and "ano" in df_custos_raw.columns:
+        # Descobre quais projetos têm movimentação no ano selecionado
+        projetos_no_ano = df_custos_raw[df_custos_raw["ano"].astype(str) == ano_selecionado]["centro_de_custo"].unique()
+        df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_no_ano)]
+        
+    # Aplicando o filtro de mês
+    if mes_selecionado != "Todos" and "mes" in df_custos_raw.columns:
+        # Descobre quais projetos têm movimentação no mês selecionado
+        projetos_no_mes = df_custos_raw[df_custos_raw["mes"].astype(str) == mes_selecionado]["centro_de_custo"].unique()
+        df_filtrado = df_filtrado[df_filtrado["projeto"].isin(projetos_no_mes)]
 
-    # Filtro por área
-    if "area" in df_custos.columns:
-        areas_all = sorted(df_custos["area"].dropna().unique().tolist())
-        areas_sel = st.multiselect("Área", areas_all, default=areas_all)
-    else:
-        areas_sel = []
 
-    # Filtro por filial
-    if "filial" in df_custos.columns:
-        filiais_all = sorted(df_custos["filial"].dropna().unique().tolist())
-        filiais_sel = st.multiselect("Filial", filiais_all, default=filiais_all)
-    else:
-        filiais_sel = []
+    # 3. Prepara a tabela visual formatada usando o DataFrame filtrado resultante
+    df_visual = df_filtrado[[
+        "projeto", 
+        "nome_projeto", 
+        "valor_total", 
+        "horas_total", 
+        "custo_por_hora"
+    ]].rename(columns={
+        "projeto": "Centro de Custo",
+        "nome_projeto": "Nome do Projeto",
+        "valor_total": "Realizado (R$)",
+        "horas_total": "Horas Acumuladas",
+        "custo_por_hora": "R$/h"
+    })
 
-df_f   = df[df["projeto"].isin(projetos_sel)]
-df_c_f = df_custos[df_custos["centro_de_custo"].isin(projetos_sel)] if "centro_de_custo" in df_custos.columns else df_custos
-df_h_f = df_horas[df_horas["c_custo"].isin(projetos_sel)] if "c_custo" in df_horas.columns else df_horas
-
-mes_col = "mes_ref" if "mes_ref" in df_c_f.columns else ("mes" if "mes" in df_c_f.columns else None)
-if meses_sel and mes_col:
-    df_c_f = df_c_f[df_c_f[mes_col].isin(meses_sel)]
-if meses_sel and "mes_ref" in df_h_f.columns:
-    df_h_f = df_h_f[df_h_f["mes_ref"].isin(meses_sel)]
-if areas_sel and "area" in df_c_f.columns:
-    df_c_f = df_c_f[df_c_f["area"].isin(areas_sel)]
-if filiais_sel and "filial" in df_c_f.columns:
-    df_c_f = df_c_f[df_c_f["filial"].isin(filiais_sel)]
+    st.subheader("Análise de Projetos com Gastos Ativos")
+    
+    # 4. Exibe a tabela final na tela
+    st.dataframe(df_visual, use_container_width=True)
 
 # ── KPIs ─────────────────────────────────────────────────────────────────────
 st.subheader("Visão Geral")
