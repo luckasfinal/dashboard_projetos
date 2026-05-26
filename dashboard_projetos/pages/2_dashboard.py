@@ -114,7 +114,8 @@ else:
 
 # ── KPIs ──────────────────────────────────────────────────────────────────────
 st.subheader("Visão Geral")
-k1, k2, k3, k4 = st.columns(4)
+k1, k2 = st.columns(2)
+k3, k4 = st.columns(2)
 
 total_custo   = df_f["valor_total"].sum()
 total_horas   = df_f["horas_total"].sum()
