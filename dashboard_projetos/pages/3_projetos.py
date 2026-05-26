@@ -271,6 +271,6 @@ if not df_f.empty:
 
     styler = tabela.style.format(fmt)
     if "% Orçamento" in tabela.columns:
-        styler = styler.applymap(colorir_pct, subset=["% Orçamento"])
+        styler = styler.map(colorir_pct, subset=["% Orçamento"])
 
     st.dataframe(styler, width="stretch", hide_index=True)
