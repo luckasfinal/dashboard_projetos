@@ -36,19 +36,30 @@ cc_selecionado = st.selectbox(
 # ── 2. Dados já salvos ────────────────────────────────────────────────────────
 dados = carregar_orcamento_projeto(cc_selecionado)
 
-def _parse_date(valor) -> date:
-    if valor and str(valor) not in ("0", "None", "nan"):
+def _parse_date_or_none(valor) -> date | None:
+    """Retorna date se válido, None para campo vazio."""
+    if valor and str(valor) not in ("0", "None", "nan", ""):
         try:
             return datetime.strptime(str(valor)[:10], "%Y-%m-%d").date()
         except ValueError:
             pass
-    return datetime.today().date()
+    return None
 
 def _str_or_none(d) -> str | None:
-    return str(d) if d else None
+    return str(d) if d is not None else None
 
-orcamento_atual  = float(dados["orcamento_previsto"]) if dados and dados.get("orcamento_previsto") else 0.0
-realizado_proj   = 0.0
+def _tem(chave: str) -> bool:
+    """True se já existe data salva no banco para esta chave."""
+    return bool(dados and _parse_date_or_none(dados.get(chave)))
+
+def _ind(chave: str) -> str:
+    """Retorna '🔵 ' se o campo já tem dado salvo (sinaliza que será atualizado)."""
+    return "🔵 " if _tem(chave) else ""
+
+orcamento_atual = float(dados["orcamento_previsto"]) if dados and dados.get("orcamento_previsto") else 0.0
+orc_tem_dado    = dados and dados.get("orcamento_previsto") and float(dados["orcamento_previsto"]) > 0
+
+realizado_proj = 0.0
 linha = df_dashboard[df_dashboard["projeto"] == cc_selecionado]
 if not linha.empty:
     realizado_proj = float(linha.iloc[0].get("valor_total", 0))
@@ -60,8 +71,9 @@ with st.form("form_orcamento", clear_on_submit=False):
     st.subheader("💰 Orçamento")
     col_fin1, col_fin2 = st.columns(2)
     with col_fin1:
+        label_orc = f"{'🔵 ' if orc_tem_dado else ''}Orçamento previsto (R$):"
         v_orcamento = st.number_input(
-            "Orçamento previsto (R$):",
+            label_orc,
             min_value=0.0, value=orcamento_atual, format="%.2f"
         )
     with col_fin2:
@@ -74,46 +86,67 @@ with st.form("form_orcamento", clear_on_submit=False):
 
     st.divider()
 
-    # — Marcos: cabeçalho fixo + uma linha por marco ───────────────────────────
+    # — Cronograma ─────────────────────────────────────────────────────────────
     st.subheader("📅 Cronograma de Marcos")
+    st.caption("🔵 indica campo com dado já salvo — salvar irá atualizá-lo.")
 
-    # Cabeçalho das 3 colunas
+    # Cabeçalho
     h1, h2, h3 = st.columns([2, 2, 2])
     h1.markdown("**Marco**")
     h2.markdown("**🗓️ Data Prevista**")
     h3.markdown("**✅ Data Realizada**")
-
     st.markdown("<hr style='margin:4px 0 12px 0'>", unsafe_allow_html=True)
 
-    # Linha 1 — Início (só tem previsto)
+    # Valores iniciais do banco
+    v = {k: _parse_date_or_none(dados.get(k)) if dados else None for k in [
+        "data_inicio",
+        "prev_viabilidade",      "real_viabilidade",
+        "prev_qualidade",        "real_qualidade",
+        "prev_aprov_lancamento", "real_aprov_lancamento",
+        "prev_lancamento",       "real_lancamento",
+    ]}
+
+    # Linha 1 — Início
     r1c1, r1c2, r1c3 = st.columns([2, 2, 2])
-    r1c1.markdown("**Início do Projeto**<br><small>(abertura CC)</small>", unsafe_allow_html=True)
-    d_inicio = r1c2.date_input("##inicio_prev", value=_parse_date(dados.get("data_inicio") if dados else None), label_visibility="collapsed")
-    r1c3.markdown("<div style='padding-top:8px;color:#888;font-size:13px'>—</div>", unsafe_allow_html=True)
+    r1c1.markdown(f"**{_ind('data_inicio')}Início do Projeto**<br><small>(abertura CC)</small>", unsafe_allow_html=True)
+    d_inicio = r1c2.date_input("##inicio_prev", value=v["data_inicio"], format="DD/MM/YYYY", label_visibility="collapsed")
+    r1c3.markdown("<div style='padding-top:8px;color:#aaa;font-size:13px'>—</div>", unsafe_allow_html=True)
 
     # Linha 2 — Viabilidade
     r2c1, r2c2, r2c3 = st.columns([2, 2, 2])
-    r2c1.markdown("**Aprovação da Viabilidade**", unsafe_allow_html=True)
-    p_viabilidade = r2c2.date_input("##viab_prev", value=_parse_date(dados.get("prev_viabilidade") if dados else None), label_visibility="collapsed")
-    r_viabilidade = r2c3.date_input("##viab_real", value=_parse_date(dados.get("real_viabilidade") if dados else None), label_visibility="collapsed")
+    r2c1.markdown(f"**{_ind('prev_viabilidade')}Aprovação da Viabilidade**")
+    p_viabilidade = r2c2.date_input("##viab_prev", value=v["prev_viabilidade"], format="DD/MM/YYYY", label_visibility="collapsed")
+    r_viabilidade = r2c3.date_input(
+        f"##viab_real{'🔵' if _tem('real_viabilidade') else ''}",
+        value=v["real_viabilidade"], format="DD/MM/YYYY", label_visibility="collapsed"
+    )
 
     # Linha 3 — Qualidade
     r3c1, r3c2, r3c3 = st.columns([2, 2, 2])
-    r3c1.markdown("**Critérios de Qualidade**", unsafe_allow_html=True)
-    p_qualidade = r3c2.date_input("##qual_prev", value=_parse_date(dados.get("prev_qualidade") if dados else None), label_visibility="collapsed")
-    r_qualidade = r3c3.date_input("##qual_real", value=_parse_date(dados.get("real_qualidade") if dados else None), label_visibility="collapsed")
+    r3c1.markdown(f"**{_ind('prev_qualidade')}Critérios de Qualidade**")
+    p_qualidade = r3c2.date_input("##qual_prev", value=v["prev_qualidade"], format="DD/MM/YYYY", label_visibility="collapsed")
+    r_qualidade = r3c3.date_input(
+        f"##qual_real{'🔵' if _tem('real_qualidade') else ''}",
+        value=v["real_qualidade"], format="DD/MM/YYYY", label_visibility="collapsed"
+    )
 
     # Linha 4 — Aprovação para Lançamento
     r4c1, r4c2, r4c3 = st.columns([2, 2, 2])
-    r4c1.markdown("**Aprovação para Lançamento**", unsafe_allow_html=True)
-    p_aprov_lanc = r4c2.date_input("##aprov_prev", value=_parse_date(dados.get("prev_aprov_lancamento") if dados else None), label_visibility="collapsed")
-    r_aprov_lanc = r4c3.date_input("##aprov_real", value=_parse_date(dados.get("real_aprov_lancamento") if dados else None), label_visibility="collapsed")
+    r4c1.markdown(f"**{_ind('prev_aprov_lancamento')}Aprovação para Lançamento**")
+    p_aprov_lanc = r4c2.date_input("##aprov_prev", value=v["prev_aprov_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed")
+    r_aprov_lanc = r4c3.date_input(
+        f"##aprov_real{'🔵' if _tem('real_aprov_lancamento') else ''}",
+        value=v["real_aprov_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed"
+    )
 
     # Linha 5 — Lançamento
     r5c1, r5c2, r5c3 = st.columns([2, 2, 2])
-    r5c1.markdown("**🚀 LANÇAMENTO**", unsafe_allow_html=True)
-    p_lancamento = r5c2.date_input("##lanc_prev", value=_parse_date(dados.get("prev_lancamento") if dados else None), label_visibility="collapsed")
-    r_lancamento = r5c3.date_input("##lanc_real", value=_parse_date(dados.get("real_lancamento") if dados else None), label_visibility="collapsed")
+    r5c1.markdown(f"**{_ind('prev_lancamento')}🚀 LANÇAMENTO**")
+    p_lancamento = r5c2.date_input("##lanc_prev", value=v["prev_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed")
+    r_lancamento = r5c3.date_input(
+        f"##lanc_real{'🔵' if _tem('real_lancamento') else ''}",
+        value=v["real_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed"
+    )
 
     st.markdown("<br>", unsafe_allow_html=True)
     botao_salvar = st.form_submit_button("💾 Salvar Dados do Projeto", type="primary")
@@ -151,13 +184,12 @@ if dados_atuais:
     pct      = (realizado_proj / orc_prev * 100) if orc_prev > 0 else 0
 
     col_a, col_b, col_c = st.columns(3)
-    col_a.metric("Orçamento Previsto",  formata_brl(orc_prev))
-    col_b.metric("Realizado (custos)",  formata_brl(realizado_proj))
+    col_a.metric("Orçamento Previsto", formata_brl(orc_prev))
+    col_b.metric("Realizado (custos)", formata_brl(realizado_proj))
     col_c.metric("Saldo", formata_brl(saldo), delta=f"{pct:.1f}% consumido", delta_color="inverse")
 
-    # Tabela de marcos com comparativo previsto x realizado e indicador de atraso
     def _fmt(val) -> str:
-        if not val or str(val) in ("0", "None", "nan"):
+        if not val or str(val) in ("0", "None", "nan", ""):
             return "—"
         try:
             return datetime.strptime(str(val)[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
@@ -165,7 +197,7 @@ if dados_atuais:
             return str(val)
 
     def _delta(prev, real) -> str:
-        if not prev or not real or str(prev) in ("0","None") or str(real) in ("0","None"):
+        if not prev or not real or str(prev) in ("0","None","") or str(real) in ("0","None",""):
             return "—"
         try:
             dp = datetime.strptime(str(prev)[:10], "%Y-%m-%d")
@@ -187,10 +219,10 @@ if dados_atuais:
 
     df_marcos = pd.DataFrame([
         {
-            "Marco":    nome,
-            "Previsto": _fmt(prev),
+            "Marco":     nome,
+            "Previsto":  _fmt(prev),
             "Realizado": _fmt(real) if real is not None else "—",
-            "Situação": _delta(prev, real) if real is not None else "—",
+            "Situação":  _delta(prev, real) if real is not None else "—",
         }
         for nome, prev, real in marcos
     ])
