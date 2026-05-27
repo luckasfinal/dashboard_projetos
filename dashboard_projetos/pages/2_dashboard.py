@@ -13,17 +13,16 @@ from utils import charts
 
 init_db()
 
-# ── CSS — compatível dark/light ───────────────────────────────────────────────
+# ── CSS Seguro — Compatibilidade Light/Dark Mode ─────────────────────────────
 st.markdown("""
 <style>
-/* KPI cards */
+/* Cards de KPI */
 div[data-testid="metric-container"] {
     border: 1px solid rgba(128,128,128,0.2);
     border-radius: 10px;
     padding: 12px 14px 8px;
     min-width: 0;
 }
-/* Força o valor a nunca truncar com "..." */
 div[data-testid="metric-container"] [data-testid="stMetricValue"] {
     font-size: clamp(14px, 2vw, 20px) !important;
     font-weight: 700;
@@ -35,7 +34,7 @@ div[data-testid="metric-container"] label {
     font-size: 12px;
     opacity: 0.7;
 }
-/* Sidebar compacta */
+/* Sidebar Customizada */
 section[data-testid="stSidebar"] { min-width: 240px !important; max-width: 260px !important; }
 section[data-testid="stSidebar"] .block-container { padding-top: 1.2rem; }
 </style>
@@ -49,33 +48,42 @@ if df_dashboard.empty:
     st.warning("⚠️ Nenhum dado encontrado. Acesse **Upload de Planilhas** e importe seus arquivos.")
     st.stop()
 
-# ── Opções de filtro ──────────────────────────────────────────────────────────
+# ── Gerenciamento Avançado e Seguro de Filtros (Sem colisões de chaves) ──────
 lista_projetos = sorted(df_dashboard["nome_projeto"].dropna().unique().tolist())
 lista_anos     = sorted(df_custos_raw["ano"].dropna().astype(str).unique().tolist()) if "ano" in df_custos_raw.columns else []
 lista_meses    = sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolist()) if "mes" in df_custos_raw.columns else []
 
-if "filtro_projetos" not in st.session_state: st.session_state["filtro_projetos"] = lista_projetos
-if "filtro_anos"     not in st.session_state: st.session_state["filtro_anos"]     = lista_anos
-if "filtro_meses"    not in st.session_state: st.session_state["filtro_meses"]    = lista_meses
+if "sel_projetos" not in st.session_state: st.session_state["sel_projetos"] = lista_projetos
+if "sel_anos"     not in st.session_state: st.session_state["sel_anos"]     = lista_anos
+if "sel_meses"    not in st.session_state: st.session_state["sel_meses"]    = lista_meses
 
-st.session_state["filtro_projetos"] = [p for p in st.session_state["filtro_projetos"] if p in lista_projetos]
-st.session_state["filtro_anos"]     = [a for a in st.session_state["filtro_anos"]     if a in lista_anos]
-st.session_state["filtro_meses"]    = [m for m in st.session_state["filtro_meses"]    if m in lista_meses]
+# Higienização dos estados salvos contra mudanças estruturais do banco
+default_projetos = [p for p in st.session_state["sel_projetos"] if p in lista_projetos]
+default_anos     = [a for a in st.session_state["sel_anos"] if a in lista_anos]
+default_meses    = [m for m in st.session_state["sel_meses"] if m in lista_meses]
 
-# ── Sidebar — Removido o argumento 'default' conflitante ──────────────────────
+if not default_projetos: default_projetos = lista_projetos
+if not default_anos: default_anos = lista_anos
+if not default_meses: default_meses = lista_meses
+
 with st.sidebar:
     st.header("🔍 Filtros")
-    projetos_selecionados = st.multiselect("Projetos:", options=lista_projetos, key="filtro_projetos")
-    anos_selecionados = st.multiselect("Ano:", options=lista_anos, key="filtro_anos")
-    meses_selecionados = st.multiselect("Mês:", options=lista_meses, key="filtro_meses")
+    projetos_selecionados = st.multiselect("Projetos:", options=lista_projetos, default=default_projetos)
+    anos_selecionados     = st.multiselect("Ano:", options=lista_anos, default=default_anos)
+    meses_selecionados    = st.multiselect("Mês:", options=lista_meses, default=default_meses)
     
     if st.button("🔄 Limpar filtros", use_container_width=True):
-        st.session_state["filtro_projetos"] = lista_projetos
-        st.session_state["filtro_anos"]     = lista_anos
-        st.session_state["filtro_meses"]    = lista_meses
+        st.session_state["sel_projetos"] = lista_projetos
+        st.session_state["sel_anos"]     = lista_anos
+        st.session_state["sel_meses"]    = lista_meses
         st.rerun()
 
-# ── Filtros ───────────────────────────────────────────────────────────────────
+# Atualiza persistência de estado para navegação entre páginas
+st.session_state["sel_projetos"] = projetos_selecionados
+st.session_state["sel_anos"]     = anos_selecionados
+st.session_state["sel_meses"]    = meses_selecionados
+
+# ── Aplicação Concreta dos Filtros ───────────────────────────────────────────
 df_f = df_dashboard.copy()
 if projetos_selecionados:
     df_f = df_f[df_f["nome_projeto"].isin(projetos_selecionados)]
@@ -86,15 +94,15 @@ if meses_selecionados and "mes" in df_custos_raw.columns:
     cc_meses = df_custos_raw[df_custos_raw["mes"].astype(str).isin(meses_selecionados)]["centro_de_custo"].unique()
     df_f = df_f[df_f["projeto"].isin(cc_meses)]
 
+if df_f.empty:
+    st.info("💡 Nenhum projeto corresponde aos filtros selecionados na barra lateral.")
+    st.stop()
+
 df_c_f  = df_custos_raw[df_custos_raw["centro_de_custo"].isin(df_f["projeto"])] if not df_custos_raw.empty else df_custos_raw
 df_h_f  = df_horas_raw[df_horas_raw["c_custo"].isin(df_f["projeto"])]           if not df_horas_raw.empty else df_horas_raw
 mes_col = "mes_ref" if "mes_ref" in df_c_f.columns else None
 
-if df_f.empty:
-    st.info("Nenhum projeto encontrado para os filtros selecionados.")
-    st.stop()
-
-# ── KPIs — duas linhas para evitar truncamento ────────────────────────────────
+# ── Métricas e KPIs Financeiros ───────────────────────────────────────────────
 total_custo   = df_f["valor_total"].sum()
 total_horas   = df_f["horas_total"].sum()
 custo_h_medio = total_custo / total_horas if total_horas > 0 else 0
@@ -104,13 +112,11 @@ total_orc     = df_f["orcamento"].sum() if tem_orc else 0
 saldo_total   = total_orc - total_custo  if tem_orc else None
 pct_consumido = (total_custo / total_orc * 100) if tem_orc and total_orc > 0 else None
 
-# Linha 1: contagens e totais principais
 r1c1, r1c2, r1c3 = st.columns(3)
 r1c1.metric("📁 Projetos ativos",  str(n_projetos))
 r1c2.metric("💰 Realizado Total",  formata_brl(total_custo))
 r1c3.metric("🎯 Orçamento Total",  formata_brl(total_orc) if tem_orc else "Não cadastrado")
 
-# Linha 2: saldo, consumo e horas
 r2c1, r2c2, r2c3 = st.columns(3)
 r2c1.metric(
     "💹 Saldo Consolidado",
@@ -123,7 +129,7 @@ r2c3.metric("📐 Custo Médio/Hora",  formata_brl(custo_h_medio))
 
 st.divider()
 
-# ── Gráficos — Incluído suporte nativo ao tema ────────────────────────────────
+# ── Renderização Adaptativa de Gráficos ───────────────────────────────────────
 col1, col2 = st.columns([3, 2])
 with col1:
     if tem_orc:
@@ -146,7 +152,7 @@ if not df_c_f.empty and mes_col:
 
 st.divider()
 
-# ── Tabela resumo ─────────────────────────────────────────────────────────────
+# ── Tabela Customizada de Alta Legibilidade ───────────────────────────────────
 st.subheader("📋 Resumo por Projeto")
 
 cols_disp = ["projeto", "nome_projeto", "valor_total", "horas_total", "custo_por_hora"]
@@ -176,20 +182,19 @@ fmt = {"Realizado (R$)": "R$ {:,.2f}", "Horas": "{:.0f}", "R$/h": "R$ {:.2f}"}
 if "Orçamento (R$)" in tabela.columns:
     fmt |= {"Orçamento (R$)": "R$ {:,.2f}", "Saldo (R$)": "R$ {:,.2f}", "% Orç.": "{:.1f}%"}
 
-# Cores otimizadas para alto contraste (Universal Light / Dark)
 def _cor_pct(val):
     try:
         v = float(str(val).replace("%","").replace(",",".").strip())
     except Exception:
         return ""
-    if v > 100: return "background-color:#dc2626;color:white;font-weight:bold" # Vermelho Sólido
-    if v >= 90: return "background-color:#ea580c;color:white;font-weight:bold" # Laranja Sólido
-    if v >= 70: return "background-color:#eab308;color:black;font-weight:bold" # Amarelo Sólido
-    return "background-color:#16a34a;color:white;font-weight:bold"             # Verde Sólido
+    if v > 100: return "background-color:#dc2626;color:white;font-weight:bold"
+    if v >= 90: return "background-color:#ea580c;color:white;font-weight:bold"
+    if v >= 70: return "background-color:#eab308;color:black;font-weight:bold"
+    return "background-color:#16a34a;color:white;font-weight:bold"
 
 styler = tabela.style.format(fmt)
 if "% Orç." in tabela.columns:
-    styler = styler.map(_cor_pct, subset=["% Orç."]) # Corrigido applymap para map
+    styler = styler.map(_cor_pct, subset=["% Orç."])
 
 st.dataframe(styler, use_container_width=True, hide_index=True)
 
