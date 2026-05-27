@@ -8,7 +8,7 @@ for p in [str(ROOT), str(ROOT / "utils")]:
 os.environ["PYTHONPATH"] = str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", "")
 
 import streamlit as st
-from utils.db import init_db, migrar_db
+from utils.db import init_db
 
 st.set_page_config(
     page_title="Dashboard de Projetos",
