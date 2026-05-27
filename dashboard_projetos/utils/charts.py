@@ -13,7 +13,7 @@ LAYOUT_BASE = dict(
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     hoverlabel=(
         dict(font_size=12),
-        dict(font_color=black),
+        dict(font_color="black"),
     )
 )
 
