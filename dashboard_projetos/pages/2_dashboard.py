@@ -62,15 +62,13 @@ st.session_state["filtro_projetos"] = [p for p in st.session_state["filtro_proje
 st.session_state["filtro_anos"]     = [a for a in st.session_state["filtro_anos"]     if a in lista_anos]
 st.session_state["filtro_meses"]    = [m for m in st.session_state["filtro_meses"]    if m in lista_meses]
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# ── Sidebar — Removido o argumento 'default' conflitante ──────────────────────
 with st.sidebar:
     st.header("🔍 Filtros")
-    projetos_selecionados = st.multiselect("Projetos:", options=lista_projetos,
-        default=st.session_state["filtro_projetos"], key="filtro_projetos")
-    anos_selecionados = st.multiselect("Ano:", options=lista_anos,
-        default=st.session_state["filtro_anos"], key="filtro_anos")
-    meses_selecionados = st.multiselect("Mês:", options=lista_meses,
-        default=st.session_state["filtro_meses"], key="filtro_meses")
+    projetos_selecionados = st.multiselect("Projetos:", options=lista_projetos, key="filtro_projetos")
+    anos_selecionados = st.multiselect("Ano:", options=lista_anos, key="filtro_anos")
+    meses_selecionados = st.multiselect("Mês:", options=lista_meses, key="filtro_meses")
+    
     if st.button("🔄 Limpar filtros", use_container_width=True):
         st.session_state["filtro_projetos"] = lista_projetos
         st.session_state["filtro_anos"]     = lista_anos
@@ -125,26 +123,26 @@ r2c3.metric("📐 Custo Médio/Hora",  formata_brl(custo_h_medio))
 
 st.divider()
 
-# ── Gráficos ──────────────────────────────────────────────────────────────────
+# ── Gráficos — Incluído suporte nativo ao tema ────────────────────────────────
 col1, col2 = st.columns([3, 2])
 with col1:
     if tem_orc:
-        st.plotly_chart(charts.grafico_custo_vs_orcamento(df_f), use_container_width=True)
+        st.plotly_chart(charts.grafico_custo_vs_orcamento(df_f), use_container_width=True, theme="streamlit")
     else:
-        st.plotly_chart(charts.grafico_realizado_por_projeto(df_f), use_container_width=True)
+        st.plotly_chart(charts.grafico_realizado_por_projeto(df_f), use_container_width=True, theme="streamlit")
 with col2:
     if not df_c_f.empty and "conta" in df_c_f.columns:
-        st.plotly_chart(charts.grafico_pizza_conta(df_c_f), use_container_width=True)
+        st.plotly_chart(charts.grafico_pizza_conta(df_c_f), use_container_width=True, theme="streamlit")
 
 col3, col4 = st.columns(2)
 with col3:
-    st.plotly_chart(charts.grafico_horas_por_projeto(df_f), use_container_width=True)
+    st.plotly_chart(charts.grafico_horas_por_projeto(df_f), use_container_width=True, theme="streamlit")
 with col4:
-    st.plotly_chart(charts.grafico_custo_por_hora(df_f), use_container_width=True)
+    st.plotly_chart(charts.grafico_custo_por_hora(df_f), use_container_width=True, theme="streamlit")
 
 if not df_c_f.empty and mes_col:
     st.subheader("📅 Evolução Mensal")
-    st.plotly_chart(charts.grafico_evolucao_mensal(df_c_f, df_h_f, mes_col), use_container_width=True)
+    st.plotly_chart(charts.grafico_evolucao_mensal(df_c_f, df_h_f, mes_col), use_container_width=True, theme="streamlit")
 
 st.divider()
 
@@ -178,19 +176,20 @@ fmt = {"Realizado (R$)": "R$ {:,.2f}", "Horas": "{:.0f}", "R$/h": "R$ {:.2f}"}
 if "Orçamento (R$)" in tabela.columns:
     fmt |= {"Orçamento (R$)": "R$ {:,.2f}", "Saldo (R$)": "R$ {:,.2f}", "% Orç.": "{:.1f}%"}
 
+# Cores otimizadas para alto contraste (Universal Light / Dark)
 def _cor_pct(val):
     try:
         v = float(str(val).replace("%","").replace(",",".").strip())
     except Exception:
         return ""
-    if v > 100: return "background-color:#7f1d1d;color:#fca5a5;font-weight:bold"
-    if v >= 90: return "background-color:#7c2d12;color:#fdba74"
-    if v >= 70: return "background-color:#713f12;color:#fde68a"
-    return "background-color:#14532d;color:#86efac"
+    if v > 100: return "background-color:#dc2626;color:white;font-weight:bold" # Vermelho Sólido
+    if v >= 90: return "background-color:#ea580c;color:white;font-weight:bold" # Laranja Sólido
+    if v >= 70: return "background-color:#eab308;color:black;font-weight:bold" # Amarelo Sólido
+    return "background-color:#16a34a;color:white;font-weight:bold"             # Verde Sólido
 
 styler = tabela.style.format(fmt)
 if "% Orç." in tabela.columns:
-    styler = styler.applymap(_cor_pct, subset=["% Orç."])
+    styler = styler.map(_cor_pct, subset=["% Orç."]) # Corrigido applymap para map
 
 st.dataframe(styler, use_container_width=True, hide_index=True)
 
