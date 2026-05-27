@@ -88,7 +88,7 @@ with st.form("form_orcamento", clear_on_submit=False):
 
     # — Cronograma ─────────────────────────────────────────────────────────────
     st.subheader("📅 Cronograma de Marcos")
-    st.caption("🔵 indica campo com dado já salvo — salvar irá atualizá-lo.")
+    st.caption("🔵 indica campo com dado já salvo — Marcar 'Limpar' removerá a data ao salvar.")
 
     # Cabeçalho
     h1, h2, h3 = st.columns([2, 2, 2])
@@ -109,44 +109,80 @@ with st.form("form_orcamento", clear_on_submit=False):
     # Linha 1 — Início
     r1c1, r1c2, r1c3 = st.columns([2, 2, 2])
     r1c1.markdown(f"**{_ind('data_inicio')}Início do Projeto**<br><small>(abertura CC)</small>", unsafe_allow_html=True)
-    d_inicio = r1c2.date_input("##inicio_prev", value=v["data_inicio"], format="DD/MM/YYYY", label_visibility="collapsed")
-    r1c3.markdown("<div style='padding-top:8px;color:#aaa;font-size:13px'>—</div>", unsafe_allow_html=True)
+    with r1c2:
+        d_inicio = st.date_input("##inicio_prev", value=v["data_inicio"], format="DD/MM/YYYY", label_visibility="collapsed")
+        if v["data_inicio"]:
+            if st.checkbox("Limpar", key="clear_data_inicio", help="Marque para remover esta data"):
+                d_inicio = None
+    r1c3.markdown("<div style='padding-top:8px;color:#666;font-size:13px'><i>Mesma da previsão</i></div>", unsafe_allow_html=True)
 
     # Linha 2 — Viabilidade
     r2c1, r2c2, r2c3 = st.columns([2, 2, 2])
     r2c1.markdown(f"**{_ind('prev_viabilidade')}Aprovação da Viabilidade**")
-    p_viabilidade = r2c2.date_input("##viab_prev", value=v["prev_viabilidade"], format="DD/MM/YYYY", label_visibility="collapsed")
-    r_viabilidade = r2c3.date_input(
-        f"##viab_real{'🔵' if _tem('real_viabilidade') else ''}",
-        value=v["real_viabilidade"], format="DD/MM/YYYY", label_visibility="collapsed"
-    )
+    with r2c2:
+        p_viabilidade = st.date_input("##viab_prev", value=v["prev_viabilidade"], format="DD/MM/YYYY", label_visibility="collapsed")
+        if v["prev_viabilidade"]:
+            if st.checkbox("Limpar", key="clear_prev_viab", help="Marque para remover esta data"):
+                p_viabilidade = None
+    with r2c3:
+        r_viabilidade = st.date_input(
+            f"##viab_real{'🔵' if _tem('real_viabilidade') else ''}",
+            value=v["real_viabilidade"], format="DD/MM/YYYY", label_visibility="collapsed"
+        )
+        if v["real_viabilidade"]:
+            if st.checkbox("Limpar", key="clear_real_viab", help="Marque para remover esta data"):
+                r_viabilidade = None
 
     # Linha 3 — Qualidade
     r3c1, r3c2, r3c3 = st.columns([2, 2, 2])
     r3c1.markdown(f"**{_ind('prev_qualidade')}Critérios de Qualidade**")
-    p_qualidade = r3c2.date_input("##qual_prev", value=v["prev_qualidade"], format="DD/MM/YYYY", label_visibility="collapsed")
-    r_qualidade = r3c3.date_input(
-        f"##qual_real{'🔵' if _tem('real_qualidade') else ''}",
-        value=v["real_qualidade"], format="DD/MM/YYYY", label_visibility="collapsed"
-    )
+    with r3c2:
+        p_qualidade = st.date_input("##qual_prev", value=v["prev_qualidade"], format="DD/MM/YYYY", label_visibility="collapsed")
+        if v["prev_qualidade"]:
+            if st.checkbox("Limpar", key="clear_prev_qual", help="Marque para remover esta data"):
+                p_qualidade = None
+    with r3c3:
+        r_qualidade = st.date_input(
+            f"##qual_real{'🔵' if _tem('real_qualidade') else ''}",
+            value=v["real_qualidade"], format="DD/MM/YYYY", label_visibility="collapsed"
+        )
+        if v["real_qualidade"]:
+            if st.checkbox("Limpar", key="clear_real_qual", help="Marque para remover esta data"):
+                r_qualidade = None
 
     # Linha 4 — Aprovação para Lançamento
     r4c1, r4c2, r4c3 = st.columns([2, 2, 2])
     r4c1.markdown(f"**{_ind('prev_aprov_lancamento')}Aprovação para Lançamento**")
-    p_aprov_lanc = r4c2.date_input("##aprov_prev", value=v["prev_aprov_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed")
-    r_aprov_lanc = r4c3.date_input(
-        f"##aprov_real{'🔵' if _tem('real_aprov_lancamento') else ''}",
-        value=v["real_aprov_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed"
-    )
+    with r4c2:
+        p_aprov_lanc = st.date_input("##aprov_prev", value=v["prev_aprov_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed")
+        if v["prev_aprov_lancamento"]:
+            if st.checkbox("Limpar", key="clear_prev_aprov", help="Marque para remover esta data"):
+                p_aprov_lanc = None
+    with r4c3:
+        r_aprov_lanc = st.date_input(
+            f"##aprov_real{'🔵' if _tem('real_aprov_lancamento') else ''}",
+            value=v["real_aprov_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed"
+        )
+        if v["real_aprov_lancamento"]:
+            if st.checkbox("Limpar", key="clear_real_aprov", help="Marque para remover esta data"):
+                r_aprov_lanc = None
 
     # Linha 5 — Lançamento
     r5c1, r5c2, r5c3 = st.columns([2, 2, 2])
     r5c1.markdown(f"**{_ind('prev_lancamento')}🚀 LANÇAMENTO**")
-    p_lancamento = r5c2.date_input("##lanc_prev", value=v["prev_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed")
-    r_lancamento = r5c3.date_input(
-        f"##lanc_real{'🔵' if _tem('real_lancamento') else ''}",
-        value=v["real_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed"
-    )
+    with r5c2:
+        p_lancamento = st.date_input("##lanc_prev", value=v["prev_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed")
+        if v["prev_lancamento"]:
+            if st.checkbox("Limpar", key="clear_prev_lanc", help="Marque para remover esta data"):
+                p_lancamento = None
+    with r5c3:
+        r_lancamento = st.date_input(
+            f"##lanc_real{'🔵' if _tem('real_lancamento') else ''}",
+            value=v["real_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed"
+        )
+        if v["real_lancamento"]:
+            if st.checkbox("Limpar", key="clear_real_lanc", help="Marque para remover esta data"):
+                r_lancamento = None
 
     st.markdown("<br>", unsafe_allow_html=True)
     botao_salvar = st.form_submit_button("💾 Salvar Dados do Projeto", type="primary")
@@ -169,7 +205,7 @@ if botao_salvar:
         )
         agregar_tudo.clear()
         st.success(f"✅ Dados do projeto **{cc_selecionado}** gravados com sucesso!")
-        st.toast("Banco de dados atualizado!", icon="💾")
+        st.toast("Banco de dados updated!", icon="💾")
     except Exception as e:
         st.error(f"❌ Erro ao salvar: {e}")
 
@@ -210,7 +246,7 @@ if dados_atuais:
             return "—"
 
     marcos = [
-        ("Início do Projeto (abertura CC)", dados_atuais.get("data_inicio"),           None),
+        ("Início do Projeto (abertura CC)", dados_atuais.get("data_inicio"),           dados_atuais.get("data_inicio")),
         ("Aprovação da Viabilidade",         dados_atuais.get("prev_viabilidade"),      dados_atuais.get("real_viabilidade")),
         ("Critérios de Qualidade",           dados_atuais.get("prev_qualidade"),        dados_atuais.get("real_qualidade")),
         ("Aprovação para Lançamento",        dados_atuais.get("prev_aprov_lancamento"), dados_atuais.get("real_aprov_lancamento")),
