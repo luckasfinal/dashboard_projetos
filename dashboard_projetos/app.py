@@ -14,7 +14,7 @@ st.set_page_config(
     page_title="Dashboard de Projetos",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 # Inicializa e migra banco (cria colunas novas se o banco antigo existir)
