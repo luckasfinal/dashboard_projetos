@@ -13,10 +13,10 @@ from utils import charts
 
 init_db()
 
-# ── CSS — tema neutro (dark + light) ─────────────────────────────────────────
+# ── CSS — tema neutro com Badges Sólidas de Alta Legibilidade ─────────────────
 st.markdown("""
 <style>
-/* KPI cards — sem cor fixa de fundo */
+/* KPI cards */
 div[data-testid="metric-container"] {
     border: 1px solid rgba(128,128,128,0.25);
     border-radius: 10px;
@@ -45,7 +45,7 @@ div[data-testid="stProgress"] > div > div { height: 10px !important; border-radi
 section[data-testid="stSidebar"] { min-width: 240px !important; max-width: 260px !important; }
 section[data-testid="stSidebar"] .block-container { padding-top: 1.2rem; }
 
-/* Tabela de marcos: usa cor do tema */
+/* Tabela de marcos estruturada */
 .marco-header {
     display:flex; align-items:center; gap:8px;
     padding:5px 0; border-bottom:2px solid rgba(128,128,128,0.3);
@@ -58,13 +58,15 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1.2rem; }
 }
 .marco-nome  { flex:2.2; font-size:13px; }
 .marco-data  { flex:1.2; font-size:13px; font-weight:600; text-align:center; }
-.marco-badge { flex:1.2; text-align:center; font-size:12px; font-weight:700;
-               border-radius:20px; padding:3px 10px; }
-.badge-ok        { background:rgba(22,163,74,.25);  color:#4ade80; }
-.badge-atrasado  { background:rgba(220,38,38,.25);  color:#f87171; }
-.badge-pendente  { background:rgba(234,179,8,.2);   color:#fbbf24; }
-.badge-futuro    { background:rgba(99,102,241,.2);  color:#a5b4fc; }
-.badge-vazio     { background:rgba(128,128,128,.12);color:rgba(128,128,128,.5); }
+.marco-badge { flex:1.2; text-align:center; font-size:11px; font-weight:700;
+               border-radius:12px; padding:4px 8px; white-space: nowrap; }
+
+/* Cores das Badges ajustadas para contraste perfeito (Fundo Sólido) */
+.badge-ok        { background:#16a34a; color:white; }
+.badge-atrasado  { background:#dc2626; color:white; }
+.badge-pendente  { background:#ca8a04; color:white; }
+.badge-futuro    { background:#2563eb; color:white; }
+.badge-vazio     { background:#6b7280; color:white; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -88,14 +90,13 @@ st.session_state["filtro_projetos"] = [p for p in st.session_state["filtro_proje
 st.session_state["filtro_anos"]     = [a for a in st.session_state["filtro_anos"]     if a in lista_anos]
 st.session_state["filtro_meses"]    = [m for m in st.session_state["filtro_meses"]    if m in lista_meses]
 
+# ── Sidebar — Removido o argumento 'default' conflitante ──────────────────────
 with st.sidebar:
     st.header("🔍 Filtros")
-    projetos_selecionados = st.multiselect("Projetos:", options=lista_projetos,
-        default=st.session_state["filtro_projetos"], key="filtro_projetos")
-    anos_selecionados = st.multiselect("Ano:", options=lista_anos,
-        default=st.session_state["filtro_anos"], key="filtro_anos")
-    meses_selecionados = st.multiselect("Mês:", options=lista_meses,
-        default=st.session_state["filtro_meses"], key="filtro_meses")
+    projetos_selecionados = st.multiselect("Projetos:", options=lista_projetos, key="filtro_projetos")
+    anos_selecionados = st.multiselect("Ano:", options=lista_anos, key="filtro_anos")
+    meses_selecionados = st.multiselect("Mês:", options=lista_meses, key="filtro_meses")
+    
     if st.button("🔄 Limpar filtros", use_container_width=True):
         st.session_state["filtro_projetos"] = lista_projetos
         st.session_state["filtro_anos"]     = lista_anos
@@ -136,14 +137,14 @@ def _badge(col_prev, col_real, prev_d, real_d) -> str:
         return "<span class='marco-badge badge-vazio'>Não informado</span>"
     if real_d:
         diff = (real_d - prev_d).days if prev_d else 0
-        return ("<span class='marco-badge badge-ok'>✅ No prazo</span>"
+        return ("<span class='marco-badge badge-ok'>No prazo</span>"
                 if diff <= 0
-                else f"<span class='marco-badge badge-atrasado'>🔴 +{diff}d</span>")
+                else f"<span class='marco-badge badge-atrasado'>+{diff}d</span>")
     if prev_d:
         diff = (hoje - prev_d).days
-        return (f"<span class='marco-badge badge-pendente'>⏳ {diff}d pendente</span>"
+        return (f"<span class='marco-badge badge-atrasado'>{diff}d atraso</span>"
                 if diff > 0
-                else f"<span class='marco-badge badge-futuro'>🗓️ Em {abs(diff)}d</span>")
+                else f"<span class='marco-badge badge-futuro'>Em {abs(diff)}d</span>")
     return "<span class='marco-badge badge-vazio'>Não informado</span>"
 
 MARCOS_DEF = [
@@ -204,7 +205,6 @@ with tab_resumo:
             ref = real_d if real_d else hoje
             if ref > prev_d: n_atrasados += 1
 
-    # KPIs em 2 linhas de 3 colunas
     r1c1, r1c2, r1c3 = st.columns(3)
     r1c1.metric("📁 Projetos ativos", str(n_proj))
     r1c2.metric("💰 Realizado",       formata_brl(total_custo))
@@ -218,25 +218,22 @@ with tab_resumo:
 
     st.markdown("")
 
-    # Gauges — usa nome do projeto como título
     if tem_orc:
         st.subheader("Consumo de Orçamento")
         n = len(df_f)
         gauge_cols = st.columns(min(n, 4))
         for i, (_, row) in enumerate(df_f.iterrows()):
             with gauge_cols[i % len(gauge_cols)]:
-                # ← passa nome_projeto, não o código CC
                 nome_gauge = str(row.get("nome_projeto","")) or row["projeto"]
                 st.plotly_chart(
                     charts.gauge_orcamento(nome_gauge, row["pct_orcamento"]),
-                    use_container_width=True,
+                    use_container_width=True, theme="streamlit"
                 )
         st.divider()
     else:
-        st.plotly_chart(charts.grafico_realizado_por_projeto(df_f), use_container_width=True)
+        st.plotly_chart(charts.grafico_realizado_por_projeto(df_f), use_container_width=True, theme="streamlit")
         st.divider()
 
-    # Tabela de status rápido
     st.subheader("Status Rápido")
 
     def _status_lanc(row) -> str:
@@ -285,7 +282,6 @@ with tab_timeline:
         semaforo  = cor_status(pct) if tem_orc and pct else "📋"
 
         with st.expander(f"{semaforo} **{nome_proj}** `{cc}`", expanded=False):
-
             fin1, fin2, fin3, fin4 = st.columns(4)
             fin1.metric("Realizado",  formata_brl(row["valor_total"]))
             fin2.metric("Orçamento",  formata_brl(row["orcamento"]) if row.get("orcamento",0) > 0 else "N/D")
@@ -316,7 +312,8 @@ with tab_timeline:
 with tab_detalhe:
     st.subheader("🔍 Detalhamento por Projeto")
 
-    proj_opcoes = df_f["nome_projeto"].tolist()
+    # Filtro sem nomes duplicados
+    proj_opcoes = df_f["nome_projeto"].dropna().unique().tolist()
     proj_map    = dict(zip(df_f["nome_projeto"], df_f["projeto"]))
 
     projeto_detalhe = st.selectbox(
@@ -328,14 +325,13 @@ with tab_detalhe:
     row = df_f[df_f["nome_projeto"] == projeto_detalhe].iloc[0]
     cc  = row["projeto"]
 
-    # Header do projeto — gradiente sutil que funciona no dark mode
     extras = " · ".join(
         str(row.get(c,"")) for c in ["filial","area","segmento"]
         if row.get(c,"") not in ("","0",0)
     )
     st.markdown(f"""
-    <div style="background:linear-gradient(90deg,rgba(37,99,235,.6),rgba(37,99,235,.25));
-                border:1px solid rgba(37,99,235,.4);border-radius:12px;
+    <div style="background:linear-gradient(90deg,rgba(37,99,235,.2),rgba(37,99,235,.05));
+                border:1px solid rgba(37,99,235,.3);border-radius:12px;
                 padding:16px 22px;margin:10px 0 18px">
         <div style="font-size:19px;font-weight:700">{row['nome_projeto']}</div>
         <div style="font-size:12px;opacity:.7;margin-top:4px">
@@ -343,7 +339,6 @@ with tab_detalhe:
         </div>
     </div>""", unsafe_allow_html=True)
 
-    # KPIs — 2 linhas de 3
     d1, d2, d3 = st.columns(3)
     d1.metric("💰 Realizado",    formata_brl(row["valor_total"]))
     d2.metric("🎯 Orçamento",    formata_brl(row["orcamento"]) if row.get("orcamento",0) > 0 else "N/D")
@@ -381,7 +376,7 @@ with tab_detalhe:
         if marcos_html:
             st.markdown(marcos_html, unsafe_allow_html=True)
         else:
-            st.caption("ℹ️ Sem datas. Acesse **Orçamentos** para informar.")
+            st.caption("ℹ️ Sem datas.")
 
     with col_eq:
         st.markdown("#### 👥 Equipe")
@@ -392,16 +387,14 @@ with tab_detalhe:
         else:
             st.caption("Sem dados de equipe.")
 
-    # Gráfico de horas
     if not df_horas_raw.empty and "c_custo" in df_horas_raw.columns:
         df_h_proj = df_horas_raw[df_horas_raw["c_custo"] == cc]
         if not df_h_proj.empty and "nome" in df_h_proj.columns:
             st.divider()
             st.markdown("#### ⏱️ Horas por Colaborador")
             st.plotly_chart(charts.grafico_horas_colaborador(df_h_proj, row.get("nome_projeto", cc)),
-                            use_container_width=True)
+                            use_container_width=True, theme="streamlit")
 
-    # Evolução mensal do projeto
     if not df_custos_raw.empty and "centro_de_custo" in df_custos_raw.columns:
         df_c_proj = df_custos_raw[df_custos_raw["centro_de_custo"] == cc]
         if not df_c_proj.empty and "mes_ref" in df_c_proj.columns:
@@ -409,13 +402,14 @@ with tab_detalhe:
             st.markdown("#### 📈 Evolução Mensal de Custos")
             custo_mes = (df_c_proj.groupby("mes_ref")["realizado"].sum()
                          .reset_index().sort_values("mes_ref"))
+            
             import plotly.graph_objects as go
             fig_cm = go.Figure(go.Bar(
                 x=custo_mes["mes_ref"], y=custo_mes["realizado"],
-                marker_color="rgba(37,99,235,.75)",
+                marker_color="#2563eb",
                 marker_line_width=0,
                 text=[f"R$ {v:,.0f}" for v in custo_mes["realizado"]],
-                textposition="outside",
+                textposition="auto", # Posicionamento automático que respeita fontes e temas
                 hovertemplate="%{x}<br>R$ %{y:,.2f}<extra></extra>",
             ))
             fig_cm.update_layout(
@@ -423,7 +417,8 @@ with tab_detalhe:
                 margin=dict(l=10,r=10,t=30,b=10),
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)",
+                xaxis=dict(gridcolor="rgba(128,128,128,0.1)"),
                 yaxis=dict(tickprefix="R$ ", tickformat=",.0f", gridcolor="rgba(128,128,128,.15)"),
                 showlegend=False,
             )
-            st.plotly_chart(fig_cm, use_container_width=True)
+            st.plotly_chart(fig_cm, use_container_width=True, theme="streamlit") # Força integração perfeita com o tema ativo
