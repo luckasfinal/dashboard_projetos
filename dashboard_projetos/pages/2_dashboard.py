@@ -13,22 +13,28 @@ from utils import charts
 
 init_db()
 
-# ── CSS global ────────────────────────────────────────────────────────────────
+# ── CSS — compatível dark/light ───────────────────────────────────────────────
 st.markdown("""
 <style>
 /* KPI cards */
 div[data-testid="metric-container"] {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    border: 1px solid rgba(128,128,128,0.2);
     border-radius: 10px;
-    padding: 14px 18px 10px;
+    padding: 12px 14px 8px;
+    min-width: 0;
 }
-div[data-testid="metric-container"] label { color: #64748b; font-size: 13px; }
-div[data-testid="metric-container"] [data-testid="stMetricValue"] { font-size: 22px; font-weight: 700; }
-
-/* Tabela zebrada */
-div[data-testid="stDataFrame"] table tr:nth-child(even) td { background-color: #f8fafc; }
-
+/* Força o valor a nunca truncar com "..." */
+div[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    font-size: clamp(14px, 2vw, 20px) !important;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: visible !important;
+    text-overflow: unset !important;
+}
+div[data-testid="metric-container"] label {
+    font-size: 12px;
+    opacity: 0.7;
+}
 /* Sidebar compacta */
 section[data-testid="stSidebar"] { min-width: 240px !important; max-width: 260px !important; }
 section[data-testid="stSidebar"] .block-container { padding-top: 1.2rem; }
@@ -90,27 +96,36 @@ if df_f.empty:
     st.info("Nenhum projeto encontrado para os filtros selecionados.")
     st.stop()
 
-# ── KPIs ──────────────────────────────────────────────────────────────────────
+# ── KPIs — duas linhas para evitar truncamento ────────────────────────────────
 total_custo   = df_f["valor_total"].sum()
 total_horas   = df_f["horas_total"].sum()
 custo_h_medio = total_custo / total_horas if total_horas > 0 else 0
 n_projetos    = len(df_f)
 tem_orc       = (df_f.get("orcamento", pd.Series([0])) > 0).any()
 total_orc     = df_f["orcamento"].sum() if tem_orc else 0
-saldo_total   = total_orc - total_custo if tem_orc else None
+saldo_total   = total_orc - total_custo  if tem_orc else None
+pct_consumido = (total_custo / total_orc * 100) if tem_orc and total_orc > 0 else None
 
-k1, k2, k3, k4, k5 = st.columns(5)
-k1.metric("📁 Projetos",          str(n_projetos))
-k2.metric("💰 Realizado Total",   formata_brl(total_custo))
-k3.metric("🎯 Orçamento Total",   formata_brl(total_orc) if tem_orc else "N/D")
-k4.metric("💹 Saldo Consolidado", formata_brl(saldo_total) if saldo_total is not None else "N/D",
-          delta=f"{(total_custo/total_orc*100):.1f}% consumido" if tem_orc and total_orc > 0 else None,
-          delta_color="inverse")
-k5.metric("⏱️ Horas Totais",      f"{total_horas:,.0f} h")
+# Linha 1: contagens e totais principais
+r1c1, r1c2, r1c3 = st.columns(3)
+r1c1.metric("📁 Projetos ativos",  str(n_projetos))
+r1c2.metric("💰 Realizado Total",  formata_brl(total_custo))
+r1c3.metric("🎯 Orçamento Total",  formata_brl(total_orc) if tem_orc else "Não cadastrado")
+
+# Linha 2: saldo, consumo e horas
+r2c1, r2c2, r2c3 = st.columns(3)
+r2c1.metric(
+    "💹 Saldo Consolidado",
+    formata_brl(saldo_total) if saldo_total is not None else "N/D",
+    delta=f"{pct_consumido:.1f}% consumido" if pct_consumido else None,
+    delta_color="inverse",
+)
+r2c2.metric("⏱️ Horas Totais",      f"{total_horas:,.0f} h")
+r2c3.metric("📐 Custo Médio/Hora",  formata_brl(custo_h_medio))
 
 st.divider()
 
-# ── Linha 1 de gráficos: Realizado vs Orçamento + Pizza contas ────────────────
+# ── Gráficos ──────────────────────────────────────────────────────────────────
 col1, col2 = st.columns([3, 2])
 with col1:
     if tem_orc:
@@ -121,21 +136,19 @@ with col2:
     if not df_c_f.empty and "conta" in df_c_f.columns:
         st.plotly_chart(charts.grafico_pizza_conta(df_c_f), use_container_width=True)
 
-# ── Linha 2: Horas + Custo/h ──────────────────────────────────────────────────
 col3, col4 = st.columns(2)
 with col3:
     st.plotly_chart(charts.grafico_horas_por_projeto(df_f), use_container_width=True)
 with col4:
     st.plotly_chart(charts.grafico_custo_por_hora(df_f), use_container_width=True)
 
-# ── Evolução mensal ───────────────────────────────────────────────────────────
 if not df_c_f.empty and mes_col:
     st.subheader("📅 Evolução Mensal")
     st.plotly_chart(charts.grafico_evolucao_mensal(df_c_f, df_h_f, mes_col), use_container_width=True)
 
 st.divider()
 
-# ── Tabela resumo com status visual ──────────────────────────────────────────
+# ── Tabela resumo ─────────────────────────────────────────────────────────────
 st.subheader("📋 Resumo por Projeto")
 
 cols_disp = ["projeto", "nome_projeto", "valor_total", "horas_total", "custo_por_hora"]
@@ -170,10 +183,10 @@ def _cor_pct(val):
         v = float(str(val).replace("%","").replace(",",".").strip())
     except Exception:
         return ""
-    if v > 100: return "background-color:#c0392b;color:white;font-weight:bold"
-    if v >= 90: return "background-color:#ffd6d6;color:#7a0000"
-    if v >= 70: return "background-color:#fff3cd;color:#664d00"
-    return "background-color:#d4edda;color:#155724"
+    if v > 100: return "background-color:#7f1d1d;color:#fca5a5;font-weight:bold"
+    if v >= 90: return "background-color:#7c2d12;color:#fdba74"
+    if v >= 70: return "background-color:#713f12;color:#fde68a"
+    return "background-color:#14532d;color:#86efac"
 
 styler = tabela.style.format(fmt)
 if "% Orç." in tabela.columns:
