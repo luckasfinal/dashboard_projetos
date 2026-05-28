@@ -17,6 +17,10 @@ migrar_db()
 st.title("📋 Planejamento de Orçamentos e Prazos")
 st.markdown("Insira ou atualize o orçamento e o cronograma de marcos dos projetos.")
 
+# Inicializa o controle de versão do formulário para reset seguro dos componentes
+if "form_version" not in st.session_state:
+    st.session_state["form_version"] = 0
+
 # ── 1. Projetos disponíveis ───────────────────────────────────────────────────
 df_dashboard, _, _ = agregar_tudo()
 
@@ -68,6 +72,9 @@ if not linha.empty:
 if "msg_sucesso" in st.session_state:
     st.success(st.session_state.pop("msg_sucesso"))
 
+# Atalho para simplificar a criação de chaves estáveis e dinâmicas
+ver = st.session_state["form_version"]
+
 # ── 3. Formulário ─────────────────────────────────────────────────────────────
 with st.form("form_orcamento", clear_on_submit=False):
 
@@ -115,7 +122,7 @@ with st.form("form_orcamento", clear_on_submit=False):
     r1c1.markdown(f"**{_ind('data_inicio')}Início do Projeto**<br><small>(abertura CC)</small>", unsafe_allow_html=True)
     with r1c2:
         d_inicio = st.date_input("##inicio_prev", value=v["data_inicio"], format="DD/MM/YYYY", label_visibility="collapsed")
-        clear_inicio = st.checkbox("Limpar", key=f"clear_inicio_{cc_selecionado}")
+        clear_inicio = st.checkbox("Limpar", key=f"clear_inicio_{cc_selecionado}_{ver}")
     r1c3.markdown("<div style='padding-top:8px;color:#aaa;font-size:13px'>—</div>", unsafe_allow_html=True)
 
     # Linha 2 — Viabilidade
@@ -123,52 +130,52 @@ with st.form("form_orcamento", clear_on_submit=False):
     r2c1.markdown(f"**{_ind('prev_viabilidade')}Aprovação da Viabilidade**")
     with r2c2:
         p_viabilidade = st.date_input("##viab_prev", value=v["prev_viabilidade"], format="DD/MM/YYYY", label_visibility="collapsed")
-        clear_p_viab = st.checkbox("Limpar Prev.", key=f"clear_p_viab_{cc_selecionado}")
+        clear_p_viab = st.checkbox("Limpar Prev.", key=f"clear_p_viab_{cc_selecionado}_{ver}")
     with r2c3:
         r_viabilidade = st.date_input(
             f"##viab_real{'🔵' if _tem('real_viabilidade') else ''}",
             value=v["real_viabilidade"], format="DD/MM/YYYY", label_visibility="collapsed"
         )
-        clear_r_viab = st.checkbox("Limpar Real.", key=f"clear_r_viab_{cc_selecionado}")
+        clear_r_viab = st.checkbox("Limpar Real.", key=f"clear_r_viab_{cc_selecionado}_{ver}")
 
     # Linha 3 — Qualidade
     r3c1, r3c2, r3c3 = st.columns([2, 2, 2])
     r3c1.markdown(f"**{_ind('prev_qualidade')}Critérios de Qualidade**")
     with r3c2:
         p_qualidade = st.date_input("##qual_prev", value=v["prev_qualidade"], format="DD/MM/YYYY", label_visibility="collapsed")
-        clear_p_qual = st.checkbox("Limpar Prev.", key=f"clear_p_qual_{cc_selecionado}")
+        clear_p_qual = st.checkbox("Limpar Prev.", key=f"clear_p_qual_{cc_selecionado}_{ver}")
     with r3c3:
         r_qualidade = st.date_input(
             f"##qual_real{'🔵' if _tem('real_qualidade') else ''}",
             value=v["real_qualidade"], format="DD/MM/YYYY", label_visibility="collapsed"
         )
-        clear_r_qual = st.checkbox("Limpar Real.", key=f"clear_r_qual_{cc_selecionado}")
+        clear_r_qual = st.checkbox("Limpar Real.", key=f"clear_r_qual_{cc_selecionado}_{ver}")
 
     # Linha 4 — Aprovação para Lançamento
     r4c1, r4c2, r4c3 = st.columns([2, 2, 2])
     r4c1.markdown(f"**{_ind('prev_aprov_lancamento')}Aprovação para Lançamento**")
     with r4c2:
         p_aprov_lanc = st.date_input("##aprov_prev", value=v["prev_aprov_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed")
-        clear_p_aprov = st.checkbox("Limpar Prev.", key=f"clear_p_aprov_{cc_selecionado}")
+        clear_p_aprov = st.checkbox("Limpar Prev.", key=f"clear_p_aprov_{cc_selecionado}_{ver}")
     with r4c3:
         r_aprov_lanc = st.date_input(
             f"##aprov_real{'🔵' if _tem('real_aprov_lancamento') else ''}",
             value=v["real_aprov_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed"
         )
-        clear_r_aprov = st.checkbox("Limpar Real.", key=f"clear_r_aprov_{cc_selecionado}")
+        clear_r_aprov = st.checkbox("Limpar Real.", key=f"clear_r_aprov_{cc_selecionado}_{ver}")
 
     # Linha 5 — Lançamento
     r5c1, r5c2, r5c3 = st.columns([2, 2, 2])
     r5c1.markdown(f"**{_ind('prev_lancamento')}🚀 LANÇAMENTO**")
     with r5c2:
         p_lancamento = st.date_input("##lanc_prev", value=v["prev_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed")
-        clear_p_lanc = st.checkbox("Limpar Prev.", key=f"clear_p_lanc_{cc_selecionado}")
+        clear_p_lanc = st.checkbox("Limpar Prev.", key=f"clear_p_lanc_{cc_selecionado}_{ver}")
     with r5c3:
         r_lancamento = st.date_input(
             f"##lanc_real{'🔵' if _tem('real_lancamento') else ''}",
             value=v["real_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed"
         )
-        clear_r_lanc = st.checkbox("Limpar Real.", key=f"clear_r_lanc_{cc_selecionado}")
+        clear_r_lanc = st.checkbox("Limpar Real.", key=f"clear_r_lanc_{cc_selecionado}_{ver}")
 
     st.markdown("<br>", unsafe_allow_html=True)
     botao_salvar = st.form_submit_button("💾 Salvar Dados do Projeto", type="primary")
@@ -176,7 +183,6 @@ with st.form("form_orcamento", clear_on_submit=False):
 # ── 4. Salvamento ─────────────────────────────────────────────────────────────
 if botao_salvar:
     try:
-        # Se o checkbox de limpar estiver marcado, envia None, caso contrário envia o valor do input
         salvar_orcamento(
             projeto               = cc_selecionado,
             orcamento_previsto    = v_orcamento,
@@ -192,17 +198,9 @@ if botao_salvar:
         )
         agregar_tudo.clear()
         
-        # Desmarca forçadamente todos os checkboxes no session_state após o salvamento correto
-        chaves_checkboxes = [
-            f"clear_inicio_{cc_selecionado}",
-            f"clear_p_viab_{cc_selecionado}", f"clear_r_viab_{cc_selecionado}",
-            f"clear_p_qual_{cc_selecionado}", f"clear_r_qual_{cc_selecionado}",
-            f"clear_p_aprov_{cc_selecionado}", f"clear_r_aprov_{cc_selecionado}",
-            f"clear_p_lanc_{cc_selecionado}", f"clear_r_lanc_{cc_selecionado}"
-        ]
-        for chave in chaves_checkboxes:
-            if chave in st.session_state:
-                st.session_state[chave] = False
+        # Correção aqui: Incrementa a versão do form. Isso muda as chaves dinamicamente 
+        # e força todos os checkboxes a resetarem para False sem estourar erro de mutação.
+        st.session_state["form_version"] += 1
                 
         st.session_state["msg_sucesso"] = f"✅ Dados do projeto **{cc_selecionado}** gravados com sucesso!"
         st.toast("Banco de dados atualizado!", icon="💾")
