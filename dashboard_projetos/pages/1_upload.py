@@ -1,4 +1,4 @@
-import sys
+import sys, os
 from pathlib import Path
 _ROOT = Path(__file__).parent.parent.resolve()
 if str(_ROOT) not in sys.path:
@@ -14,16 +14,24 @@ from utils.data_processor import (
     ler_planilha_bytes, preparar_custos, preparar_horas,
     validar_colunas, COLUNAS_CUSTOS, COLUNAS_HORAS, agregar_tudo,
 )
+from utils.auth import perfil_admin
 
 init_db()
 
+# ── Controle de perfil ────────────────────────────────────────────────────────
+_admin = perfil_admin()
+
 st.title("📤 Upload de Planilhas")
+
+if not _admin:
+    st.info("👁️ Modo somente leitura — upload e alterações desabilitados para este perfil.")
+
 st.markdown(
     "Cada arquivo enviado é **acumulado** no histórico. "
     "Você pode enviar planilhas de meses diferentes sem perder dados anteriores."
 )
 
-# ── Formato esperado ────────────────────────────────────────────────────────
+# ── Formato esperado ──────────────────────────────────────────────────────────
 with st.expander("📋 Ver formato esperado das planilhas"):
     c1, c2 = st.columns(2)
     with c1:
@@ -40,8 +48,7 @@ with st.expander("📋 Ver formato esperado das planilhas"):
             "Parceiro Negócio":       ["F-00123 Fornecedor X"],
             "Histórico":              ["NF 4521 Serviços"],
             "Realizado":              ["5.000,00"],
-        }), hide_index=True, width="stretch")
-
+        }), hide_index=True, use_container_width=True)
     with c2:
         st.markdown("**Planilha de Horas** (xlsx / csv)")
         st.dataframe(pd.DataFrame({
@@ -65,8 +72,7 @@ with st.expander("📋 Ver formato esperado das planilhas"):
             "C.Custo - Descrição Ordem Interna":    ["1001 - Projeto Alpha"],
             "Matricula - Nome":                     ["12345 - Ana Silva"],
             "Segmento":                             ["Enterprise"],
-        }), hide_index=True, width="stretch")
-
+        }), hide_index=True, use_container_width=True)
     st.info(
         "💡 A coluna **Centro de Custo** (custos) e **C.Custo** (horas) são usadas "
         "como chave de projeto para cruzar as duas planilhas."
@@ -74,68 +80,73 @@ with st.expander("📋 Ver formato esperado das planilhas"):
 
 st.divider()
 
-# ── Uploaders ───────────────────────────────────────────────────────────────
+# ── Uploaders — desabilitados para visualizador ───────────────────────────────
 col_l, col_r = st.columns(2)
 with col_l:
     st.subheader("Planilha de Custos")
-    f_custos = st.file_uploader("Arquivo de custos", type=["xlsx", "xls", "csv"], key="up_custos")
+    f_custos = st.file_uploader(
+        "Arquivo de custos", type=["xlsx", "xls", "csv"], key="up_custos",
+        disabled=not _admin,
+    )
 with col_r:
     st.subheader("Planilha de Horas")
-    f_horas = st.file_uploader("Arquivo de horas", type=["xlsx", "xls", "csv"], key="up_horas")
+    f_horas = st.file_uploader(
+        "Arquivo de horas", type=["xlsx", "xls", "csv"], key="up_horas",
+        disabled=not _admin,
+    )
 
 st.divider()
 
-# ── Processar ───────────────────────────────────────────────────────────────
-if f_custos is not None or f_horas is not None:
-    if st.button("💾 Importar e Salvar no Histórico", type="primary", width="stretch"):
-        avisos, sucessos = [], []
+# ── Processar — só admin ──────────────────────────────────────────────────────
+if _admin:
+    if f_custos is not None or f_horas is not None:
+        if st.button("💾 Importar e Salvar no Histórico", type="primary", use_container_width=True):
+            avisos, sucessos = [], []
 
-        if f_custos:
-            bytes_c = f_custos.read()
-            df_c = ler_planilha_bytes(bytes_c, f_custos.name)
-            df_c = preparar_custos(df_c)
-            erros_c = validar_colunas(df_c, COLUNAS_CUSTOS, "Custos")
-            if erros_c:
-                avisos += erros_c
-                with st.expander("🔍 Colunas detectadas na planilha de custos"):
-                    st.write(list(df_c.columns))
-            else:
-                linhas, duplicado = salvar_custos(df_c, f_custos.name)
-                if duplicado:
-                    avisos.append(f"'{f_custos.name}' já foi importado — ignorado para evitar duplicação.")
+            if f_custos:
+                bytes_c = f_custos.read()
+                df_c    = ler_planilha_bytes(bytes_c, f_custos.name)
+                df_c    = preparar_custos(df_c)
+                erros_c = validar_colunas(df_c, COLUNAS_CUSTOS, "Custos")
+                if erros_c:
+                    avisos += erros_c
+                    with st.expander("🔍 Colunas detectadas na planilha de custos"):
+                        st.write(list(df_c.columns))
                 else:
-                    sucessos.append(f"Custos: **{linhas} linhas** de `{f_custos.name}` salvas.")
+                    linhas, dup = salvar_custos(df_c, f_custos.name)
+                    if dup:
+                        avisos.append(f"'{f_custos.name}' já foi importado — ignorado.")
+                    else:
+                        sucessos.append(f"Custos: **{linhas} linhas** de `{f_custos.name}` salvas.")
 
-        if f_horas:
-            bytes_h = f_horas.read()
-            df_h = ler_planilha_bytes(bytes_h, f_horas.name)
-            df_h = preparar_horas(df_h)
-            erros_h = validar_colunas(df_h, COLUNAS_HORAS, "Horas")
-            if erros_h:
-                avisos += erros_h
-                with st.expander("🔍 Colunas detectadas na planilha de horas"):
-                    st.write(list(df_h.columns))
-            else:
-                linhas, duplicado = salvar_horas(df_h, f_horas.name)
-                if duplicado:
-                    avisos.append(f"'{f_horas.name}' já foi importado — ignorado para evitar duplicação.")
+            if f_horas:
+                bytes_h = f_horas.read()
+                df_h    = ler_planilha_bytes(bytes_h, f_horas.name)
+                df_h    = preparar_horas(df_h)
+                erros_h = validar_colunas(df_h, COLUNAS_HORAS, "Horas")
+                if erros_h:
+                    avisos += erros_h
+                    with st.expander("🔍 Colunas detectadas na planilha de horas"):
+                        st.write(list(df_h.columns))
                 else:
-                    sucessos.append(f"Horas: **{linhas} linhas** de `{f_horas.name}` salvas.")
+                    linhas, dup = salvar_horas(df_h, f_horas.name)
+                    if dup:
+                        avisos.append(f"'{f_horas.name}' já foi importado — ignorado.")
+                    else:
+                        sucessos.append(f"Horas: **{linhas} linhas** de `{f_horas.name}` salvas.")
 
-        for msg in sucessos:
-            st.success(f"✅ {msg}")
-        for msg in avisos:
-            st.warning(f"⚠️ {msg}")
+            for msg in sucessos: st.success(f"✅ {msg}")
+            for msg in avisos:   st.warning(f"⚠️ {msg}")
 
-        if sucessos:
-            agregar_tudo.clear()
-            st.info("📊 Dashboard atualizado. Navegue para **Dashboard Financeiro**.")
-else:
-    st.info("⬆️ Selecione ao menos um arquivo para importar.")
+            if sucessos:
+                agregar_tudo.clear()
+                st.info("📊 Dashboard atualizado. Navegue para **Dashboard Financeiro**.")
+    else:
+        st.info("⬆️ Selecione ao menos um arquivo para importar.")
 
 st.divider()
 
-# ── Histórico ───────────────────────────────────────────────────────────────
+# ── Histórico ─────────────────────────────────────────────────────────────────
 st.subheader("📁 Histórico de Arquivos Importados")
 df_imp = listar_importacoes()
 
@@ -145,56 +156,46 @@ else:
     exibe = df_imp.copy()
     exibe.columns = ["Tipo", "Arquivo", "Importado em", "Linhas"]
     exibe["Tipo"] = exibe["Tipo"].map({"custos": "💰 Custos", "horas": "⏱️ Horas"})
-    st.dataframe(exibe, width="stretch", hide_index=True)
+    st.dataframe(exibe, use_container_width=True, hide_index=True)
 
-    st.markdown("**Remover um arquivo do histórico:**")
-    opcoes = [f"{r['tipo']}|{r['arquivo']}" for _, r in df_imp.iterrows()]
-    labels = [f"{r['tipo'].capitalize()} — {r['arquivo']}" for _, r in df_imp.iterrows()]
-    idx = st.selectbox("Selecione", range(len(labels)), format_func=lambda i: labels[i], key="sel_del")
-    if st.button("🗑️ Remover este arquivo", type="secondary"):
-        tipo_sel, arq_sel = opcoes[idx].split("|", 1)
-        removidas = deletar_importacao(arq_sel, tipo_sel)
-        agregar_tudo.clear()
-        st.success(f"✅ {removidas} linhas de `{arq_sel}` removidas.")
-        st.rerun()
+    # Remoção — só admin
+    if _admin:
+        st.markdown("**Remover um arquivo do histórico:**")
+        opcoes = [f"{r['tipo']}|{r['arquivo']}" for _, r in df_imp.iterrows()]
+        labels = [f"{r['tipo'].capitalize()} — {r['arquivo']}" for _, r in df_imp.iterrows()]
+        idx = st.selectbox("Selecione", range(len(labels)),
+                           format_func=lambda i: labels[i], key="sel_del")
+        if st.button("🗑️ Remover este arquivo", type="secondary"):
+            tipo_sel, arq_sel = opcoes[idx].split("|", 1)
+            removidas = deletar_importacao(arq_sel, tipo_sel)
+            agregar_tudo.clear()
+            st.success(f"✅ {removidas} linhas de `{arq_sel}` removidas.")
+            st.rerun()
 
 st.divider()
 
-# ── Reset total ─────────────────────────────────────────────────────────────
-# ── Reset total ─────────────────────────────────────────────────────────────
-with st.expander("⚠️ Zona de perigo — apagar tudo"):
-    st.warning("Esta ação remove **todos** os dados. Não pode ser desfeita.")
-    
-    # 1. Criamos uma função de callback dedicada para limpar o banco e o input com segurança
-    def callback_apagar_dados():
-        # Executa as suas funções originais de limpeza
-        limpar_tudo()
-        agregar_tudo.clear()
-        
-        # Agora limpamos o input de forma segura dentro do ciclo de execução do Streamlit
-        st.session_state["texto_confirmacao"] = ""
-        st.toast("Banco de dados limpo com sucesso!", icon="🔥")
+# ── Zona de perigo — só admin ─────────────────────────────────────────────────
+if _admin:
+    with st.expander("⚠️ Zona de perigo — apagar tudo"):
+        st.warning("Esta ação remove **todos** os dados. Não pode ser desfeita.")
 
-    # 2. Inicializa a variável no session_state se ela não existir
-    if "texto_confirmacao" not in st.session_state:
-        st.session_state.texto_confirmacao = ""
+        def _callback_apagar():
+            limpar_tudo()
+            agregar_tudo.clear()
+            st.session_state["texto_confirmacao"] = ""
+            st.toast("Banco de dados limpo com sucesso!", icon="🔥")
 
-    # 3. Vincula o text_input ao session_state usando a propriedade 'key'
-    confirmacao = st.text_input(
-        "Digite CONFIRMAR para habilitar o botão", 
-        key="texto_confirmacao"
-    )
-    
-    # Valida se o usuário escreveu exatamente "CONFIRMAR"
-    botao_desabilitado = (confirmacao != "CONFIRMAR")
+        if "texto_confirmacao" not in st.session_state:
+            st.session_state.texto_confirmacao = ""
 
-    # 4. Passamos a função para o parâmetro 'on_click'. O Streamlit cuidará do ciclo de vida sem estourar o erro.
-    if st.button(
-        "🔥 Apagar todos os dados", 
-        disabled=botao_desabilitado, 
-        type="secondary",
-        on_click=callback_apagar_dados
-    ):
-        # Como o callback já limpou os dados e o estado do input antes da página recarregar,
-        # basta disparar o rerun para atualizar a interface com o campo limpo!
-        st.rerun()
+        confirmacao = st.text_input(
+            "Digite CONFIRMAR para habilitar o botão",
+            key="texto_confirmacao",
+        )
+        if st.button(
+            "🔥 Apagar todos os dados",
+            disabled=(confirmacao != "CONFIRMAR"),
+            type="secondary",
+            on_click=_callback_apagar,
+        ):
+            st.rerun()
