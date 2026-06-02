@@ -1,0 +1,25 @@
+name: Scheduled Empty Commit
+
+on:
+  schedule:
+    # Runs every 10 hours
+    - cron: '0 */7 * * *'
+  # Allows you to manually trigger the workflow from the Actions tab
+  workflow_dispatch: 
+
+jobs:
+  commit:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Configure Git
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "41898282+github-actions[bot]@://github.com"
+
+    - name: Create and push empty commit
+      run: |
+        git commit --allow-empty -m "Chore: automated scheduled commit"
+        git push
