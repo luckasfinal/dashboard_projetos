@@ -1,10 +1,3 @@
-auth.py — Camada de autenticação simples (hardcoded).
-Gerencia sessão via st.session_state.
-
-Perfis disponíveis:
-  - "admin"      → acesso total
-  - "visualizador" → somente leitura
-"""
 import streamlit as st
 import hashlib
 
