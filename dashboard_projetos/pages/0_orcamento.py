@@ -10,11 +10,21 @@ import streamlit as st
 import pandas as pd
 from utils.db import init_db, migrar_db, salvar_orcamento, carregar_orcamento_projeto
 from utils.data_processor import agregar_tudo, formata_brl
+from utils.auth import perfil_admin
 
 init_db()
 migrar_db()
 
+# ── Controle de perfil ────────────────────────────────────────────────────────
+_admin = perfil_admin()
+
 st.title("📋 Planejamento de Orçamentos e Prazos")
+
+if not _admin:
+    st.info("👁️ Modo somente leitura — upload e alterações desabilitados para este perfil.")
+
+# ── Processar — só admin ──────────────────────────────────────────────────────
+if _admin:
 st.markdown("Insira ou atualize o orçamento e o cronograma de marcos dos projetos.")
 
 # Inicializa o controle de versão do formulário para reset seguro dos componentes
