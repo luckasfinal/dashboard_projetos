@@ -20,11 +20,6 @@ _admin = perfil_admin()
 
 st.title("📋 Planejamento de Orçamentos e Prazos")
 
-if not _admin:
-    st.info("👁️ Modo somente leitura — upload e alterações desabilitados para este perfil.")
-
-# ── Processar — só admin ──────────────────────────────────────────────────────
-if _admin:
 st.markdown("Insira ou atualize o orçamento e o cronograma de marcos dos projetos.")
 
 # Inicializa o controle de versão do formulário para reset seguro dos componentes
