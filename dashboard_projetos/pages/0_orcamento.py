@@ -20,11 +20,10 @@ _admin = perfil_admin()
 
 st.title("📋 Planejamento de Orçamentos e Prazos")
 
-st.markdown("Insira ou atualize o orçamento e o cronograma de marcos dos projetos.")
+if not _admin:
+    st.info("👁️ Modo somente leitura — edição desabilitada para este perfil.")
 
-# Inicializa o controle de versão do formulário para reset seguro dos componentes
-if "form_version" not in st.session_state:
-    st.session_state["form_version"] = 0
+st.markdown("Insira ou atualize o orçamento e o cronograma de marcos dos projetos.")
 
 # ── 1. Projetos disponíveis ───────────────────────────────────────────────────
 df_dashboard, _, _ = agregar_tudo()
@@ -33,7 +32,7 @@ if df_dashboard.empty:
     st.warning("⚠️ Nenhum projeto encontrado. Importe as planilhas na página de Upload.")
     st.stop()
 
-lista_cc = sorted(df_dashboard["projeto"].unique().tolist())
+lista_cc         = sorted(df_dashboard["projeto"].unique().tolist())
 mapeamento_nomes = dict(zip(df_dashboard["projeto"], df_dashboard["nome_projeto"]))
 
 cc_selecionado = st.selectbox(
@@ -46,7 +45,6 @@ cc_selecionado = st.selectbox(
 dados = carregar_orcamento_projeto(cc_selecionado)
 
 def _parse_date_or_none(valor) -> date | None:
-    """Retorna date se válido, None para campo vazio."""
     if valor and str(valor) not in ("0", "None", "nan", ""):
         try:
             return datetime.strptime(str(valor)[:10], "%Y-%m-%d").date()
@@ -58,11 +56,9 @@ def _str_or_none(d) -> str | None:
     return str(d) if d is not None else None
 
 def _tem(chave: str) -> bool:
-    """True se já existe data salva no banco para esta chave."""
     return bool(dados and _parse_date_or_none(dados.get(chave)))
 
 def _ind(chave: str) -> str:
-    """Retorna '🔵 ' se o campo já tem dado salvo (sinaliza que será atualizado)."""
     return "🔵 " if _tem(chave) else ""
 
 orcamento_atual = float(dados["orcamento_previsto"]) if dados and dados.get("orcamento_previsto") else 0.0
@@ -73,24 +69,21 @@ linha = df_dashboard[df_dashboard["projeto"] == cc_selecionado]
 if not linha.empty:
     realizado_proj = float(linha.iloc[0].get("valor_total", 0))
 
-# Mapeia temporariamente uma mensagem de sucesso para persistir após o rerun
-if "msg_sucesso" in st.session_state:
-    st.success(st.session_state.pop("msg_sucesso"))
-
-# Atalho para simplificar a criação de chaves estáveis e dinâmicas
-ver = st.session_state["form_version"]
-
 # ── 3. Formulário ─────────────────────────────────────────────────────────────
+# O formulário é sempre exibido, mas os campos ficam disabled para visualizador
 with st.form("form_orcamento", clear_on_submit=False):
 
-    # — Financeiro ————————————————————————————————————————————————————————————
+    # — Financeiro ────────────────────────────────────────────────────────────
     st.subheader("💰 Orçamento")
     col_fin1, col_fin2 = st.columns(2)
     with col_fin1:
         label_orc = f"{'🔵 ' if orc_tem_dado else ''}Orçamento previsto (R$):"
         v_orcamento = st.number_input(
             label_orc,
-            min_value=0.0, value=orcamento_atual, format="%.2f"
+            min_value=0.0,
+            value=orcamento_atual,
+            format="%.2f",
+            disabled=not _admin,   # ← somente leitura para visualizador
         )
     with col_fin2:
         st.text_input(
@@ -104,7 +97,10 @@ with st.form("form_orcamento", clear_on_submit=False):
 
     # — Cronograma ─────────────────────────────────────────────────────────────
     st.subheader("📅 Cronograma de Marcos")
-    st.caption("🔵 indica campo com dado já salvo — salvar irá atualizá-lo.")
+    if _admin:
+        st.caption("🔵 indica campo com dado já salvo — salvar irá atualizá-lo.")
+    else:
+        st.caption("🔵 indica campo com dado já salvo.")
 
     # Cabeçalho
     h1, h2, h3 = st.columns([2, 2, 2])
@@ -125,95 +121,91 @@ with st.form("form_orcamento", clear_on_submit=False):
     # Linha 1 — Início
     r1c1, r1c2, r1c3 = st.columns([2, 2, 2])
     r1c1.markdown(f"**{_ind('data_inicio')}Início do Projeto**<br><small>(abertura CC)</small>", unsafe_allow_html=True)
-    with r1c2:
-        d_inicio = st.date_input("##inicio_prev", value=v["data_inicio"], format="DD/MM/YYYY", label_visibility="collapsed")
-        clear_inicio = st.checkbox("Limpar", key=f"clear_inicio_{cc_selecionado}_{ver}")
+    d_inicio = r1c2.date_input("##inicio_prev", value=v["data_inicio"],
+                                format="DD/MM/YYYY", label_visibility="collapsed",
+                                disabled=not _admin)
     r1c3.markdown("<div style='padding-top:8px;color:#aaa;font-size:13px'>—</div>", unsafe_allow_html=True)
 
     # Linha 2 — Viabilidade
     r2c1, r2c2, r2c3 = st.columns([2, 2, 2])
     r2c1.markdown(f"**{_ind('prev_viabilidade')}Aprovação da Viabilidade**")
-    with r2c2:
-        p_viabilidade = st.date_input("##viab_prev", value=v["prev_viabilidade"], format="DD/MM/YYYY", label_visibility="collapsed")
-        clear_p_viab = st.checkbox("Limpar Prev.", key=f"clear_p_viab_{cc_selecionado}_{ver}")
-    with r2c3:
-        r_viabilidade = st.date_input(
-            f"##viab_real{'🔵' if _tem('real_viabilidade') else ''}",
-            value=v["real_viabilidade"], format="DD/MM/YYYY", label_visibility="collapsed"
-        )
-        clear_r_viab = st.checkbox("Limpar Real.", key=f"clear_r_viab_{cc_selecionado}_{ver}")
+    p_viabilidade = r2c2.date_input("##viab_prev", value=v["prev_viabilidade"],
+                                     format="DD/MM/YYYY", label_visibility="collapsed",
+                                     disabled=not _admin)
+    r_viabilidade = r2c3.date_input(
+        f"##viab_real{'🔵' if _tem('real_viabilidade') else ''}",
+        value=v["real_viabilidade"], format="DD/MM/YYYY", label_visibility="collapsed",
+        disabled=not _admin,
+    )
 
     # Linha 3 — Qualidade
     r3c1, r3c2, r3c3 = st.columns([2, 2, 2])
     r3c1.markdown(f"**{_ind('prev_qualidade')}Critérios de Qualidade**")
-    with r3c2:
-        p_qualidade = st.date_input("##qual_prev", value=v["prev_qualidade"], format="DD/MM/YYYY", label_visibility="collapsed")
-        clear_p_qual = st.checkbox("Limpar Prev.", key=f"clear_p_qual_{cc_selecionado}_{ver}")
-    with r3c3:
-        r_qualidade = st.date_input(
-            f"##qual_real{'🔵' if _tem('real_qualidade') else ''}",
-            value=v["real_qualidade"], format="DD/MM/YYYY", label_visibility="collapsed"
-        )
-        clear_r_qual = st.checkbox("Limpar Real.", key=f"clear_r_qual_{cc_selecionado}_{ver}")
+    p_qualidade = r3c2.date_input("##qual_prev", value=v["prev_qualidade"],
+                                   format="DD/MM/YYYY", label_visibility="collapsed",
+                                   disabled=not _admin)
+    r_qualidade = r3c3.date_input(
+        f"##qual_real{'🔵' if _tem('real_qualidade') else ''}",
+        value=v["real_qualidade"], format="DD/MM/YYYY", label_visibility="collapsed",
+        disabled=not _admin,
+    )
 
     # Linha 4 — Aprovação para Lançamento
     r4c1, r4c2, r4c3 = st.columns([2, 2, 2])
     r4c1.markdown(f"**{_ind('prev_aprov_lancamento')}Aprovação para Lançamento**")
-    with r4c2:
-        p_aprov_lanc = st.date_input("##aprov_prev", value=v["prev_aprov_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed")
-        clear_p_aprov = st.checkbox("Limpar Prev.", key=f"clear_p_aprov_{cc_selecionado}_{ver}")
-    with r4c3:
-        r_aprov_lanc = st.date_input(
-            f"##aprov_real{'🔵' if _tem('real_aprov_lancamento') else ''}",
-            value=v["real_aprov_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed"
-        )
-        clear_r_aprov = st.checkbox("Limpar Real.", key=f"clear_r_aprov_{cc_selecionado}_{ver}")
+    p_aprov_lanc = r4c2.date_input("##aprov_prev", value=v["prev_aprov_lancamento"],
+                                    format="DD/MM/YYYY", label_visibility="collapsed",
+                                    disabled=not _admin)
+    r_aprov_lanc = r4c3.date_input(
+        f"##aprov_real{'🔵' if _tem('real_aprov_lancamento') else ''}",
+        value=v["real_aprov_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed",
+        disabled=not _admin,
+    )
 
     # Linha 5 — Lançamento
     r5c1, r5c2, r5c3 = st.columns([2, 2, 2])
     r5c1.markdown(f"**{_ind('prev_lancamento')}🚀 LANÇAMENTO**")
-    with r5c2:
-        p_lancamento = st.date_input("##lanc_prev", value=v["prev_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed")
-        clear_p_lanc = st.checkbox("Limpar Prev.", key=f"clear_p_lanc_{cc_selecionado}_{ver}")
-    with r5c3:
-        r_lancamento = st.date_input(
-            f"##lanc_real{'🔵' if _tem('real_lancamento') else ''}",
-            value=v["real_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed"
-        )
-        clear_r_lanc = st.checkbox("Limpar Real.", key=f"clear_r_lanc_{cc_selecionado}_{ver}")
+    p_lancamento = r5c2.date_input("##lanc_prev", value=v["prev_lancamento"],
+                                    format="DD/MM/YYYY", label_visibility="collapsed",
+                                    disabled=not _admin)
+    r_lancamento = r5c3.date_input(
+        f"##lanc_real{'🔵' if _tem('real_lancamento') else ''}",
+        value=v["real_lancamento"], format="DD/MM/YYYY", label_visibility="collapsed",
+        disabled=not _admin,
+    )
 
     st.markdown("<br>", unsafe_allow_html=True)
-    botao_salvar = st.form_submit_button("💾 Salvar Dados do Projeto", type="primary")
 
-# ── 4. Salvamento ─────────────────────────────────────────────────────────────
-if botao_salvar:
+    # Botão de salvar — oculto para visualizador
+    if _admin:
+        botao_salvar = st.form_submit_button("💾 Salvar Dados do Projeto", type="primary")
+    else:
+        st.form_submit_button("💾 Salvar Dados do Projeto", type="primary", disabled=True)
+        botao_salvar = False
+
+# ── 4. Salvamento — só admin ──────────────────────────────────────────────────
+if botao_salvar and _admin:
     try:
         salvar_orcamento(
             projeto               = cc_selecionado,
             orcamento_previsto    = v_orcamento,
-            data_inicio           = None if clear_inicio else _str_or_none(d_inicio),
-            prev_viabilidade      = None if clear_p_viab else _str_or_none(p_viabilidade),
-            prev_qualidade        = None if clear_p_qual else _str_or_none(p_qualidade),
-            prev_aprov_lancamento = None if clear_p_aprov else _str_or_none(p_aprov_lanc),
-            prev_lancamento       = None if clear_p_lanc else _str_or_none(p_lancamento),
-            real_viabilidade      = None if clear_r_viab else _str_or_none(r_viabilidade),
-            real_qualidade        = None if clear_r_qual else _str_or_none(r_qualidade),
-            real_aprov_lancamento = None if clear_r_aprov else _str_or_none(r_aprov_lanc),
-            real_lancamento       = None if clear_r_lanc else _str_or_none(r_lancamento),
+            data_inicio           = _str_or_none(d_inicio),
+            prev_viabilidade      = _str_or_none(p_viabilidade),
+            prev_qualidade        = _str_or_none(p_qualidade),
+            prev_aprov_lancamento = _str_or_none(p_aprov_lanc),
+            prev_lancamento       = _str_or_none(p_lancamento),
+            real_viabilidade      = _str_or_none(r_viabilidade),
+            real_qualidade        = _str_or_none(r_qualidade),
+            real_aprov_lancamento = _str_or_none(r_aprov_lanc),
+            real_lancamento       = _str_or_none(r_lancamento),
         )
         agregar_tudo.clear()
-        
-        # Correção aqui: Incrementa a versão do form. Isso muda as chaves dinamicamente 
-        # e força todos os checkboxes a resetarem para False sem estourar erro de mutação.
-        st.session_state["form_version"] += 1
-                
-        st.session_state["msg_sucesso"] = f"✅ Dados do projeto **{cc_selecionado}** gravados com sucesso!"
+        st.success(f"✅ Dados do projeto **{cc_selecionado}** gravados com sucesso!")
         st.toast("Banco de dados atualizado!", icon="💾")
-        st.rerun()
     except Exception as e:
         st.error(f"❌ Erro ao salvar: {e}")
 
-# ── 5. Resumo pós-salvo ───────────────────────────────────────────────────────
+# ── 5. Resumo ─────────────────────────────────────────────────────────────────
 st.divider()
 st.subheader(f"📊 Resumo — {cc_selecionado} / {mapeamento_nomes.get(cc_selecionado, '')}")
 
@@ -240,8 +232,8 @@ if dados_atuais:
         if not prev or not real or str(prev) in ("0","None","") or str(real) in ("0","None",""):
             return "—"
         try:
-            dp = datetime.strptime(str(prev)[:10], "%Y-%m-%d")
-            dr = datetime.strptime(str(real)[:10], "%Y-%m-%d")
+            dp   = datetime.strptime(str(prev)[:10], "%Y-%m-%d")
+            dr   = datetime.strptime(str(real)[:10], "%Y-%m-%d")
             diff = (dr - dp).days
             if diff > 0:  return f"🔴 +{diff} dias"
             if diff < 0:  return f"🟢 {abs(diff)} dias adiantado"
@@ -270,11 +262,11 @@ if dados_atuais:
     def _highlight(row):
         sit = row["Situação"]
         if "🔴" in str(sit):
-            return ["", "", "background-color:#fde8e8", "background-color:#fde8e8; color:#900"]
+            return ["", "", "background-color:rgba(220,38,38,.2)", "background-color:rgba(220,38,38,.2);color:#f87171"]
         if "🟢" in str(sit):
-            return ["", "", "background-color:#e8fde8", "background-color:#e8fde8; color:#060"]
+            return ["", "", "background-color:rgba(22,163,74,.2)", "background-color:rgba(22,163,74,.2);color:#4ade80"]
         if "✅" in str(sit):
-            return ["", "", "background-color:#eaf4fb", "background-color:#eaf4fb; color:#1a5276"]
+            return ["", "", "background-color:rgba(37,99,235,.15)", "background-color:rgba(37,99,235,.15);color:#93c5fd"]
         return ["", "", "", ""]
 
     st.dataframe(
