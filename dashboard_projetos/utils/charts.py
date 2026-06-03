@@ -306,28 +306,36 @@ def grafico_evolucao_mensal_projeto(df_custos_proj: pd.DataFrame,
     custo_mes = (df_custos_proj.groupby(mes_col)[val_col].sum()
                  .reset_index().sort_values(mes_col))
 
+    # Acumulado: soma progressiva (running total) dos desembolsos
+    custo_mes["acumulado"] = custo_mes[val_col].cumsum()
+
     fig = go.Figure()
 
-    # 1. Área — fica atrás (adicionada primeiro)
+    # 1. Área com valor ACUMULADO — fica atrás (adicionada primeiro)
+    #    Usa eixo Y secundário para que sua escala maior não esmague as barras
     fig.add_trace(go.Scatter(
-        x=custo_mes[mes_col], y=custo_mes[val_col],
-        name="Acumulado (área)",
+        x=custo_mes[mes_col],
+        y=custo_mes["acumulado"],
+        name="Acumulado",
         mode="lines",
-        line=dict(color="rgba(76,120,168,.4)", width=1.5),
+        line=dict(color="rgba(76,120,168,.5)", width=2),
         fill="tozeroy",
-        fillcolor="rgba(76,120,168,.12)",
-        hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Acumulado</extra>",
+        fillcolor="rgba(76,120,168,.10)",
+        yaxis="y2",
+        hovertemplate="%{x}<br>Acumulado: R$ %{y:,.2f}<extra></extra>",
     ))
 
-    # 2. Colunas — fica na frente
+    # 2. Colunas com valor MENSAL — fica na frente, eixo Y principal
     fig.add_trace(go.Bar(
-        x=custo_mes[mes_col], y=custo_mes[val_col],
-        name="Desembolso mensal",
-        marker_color="rgba(76,120,168,.75)",
+        x=custo_mes[mes_col],
+        y=custo_mes[val_col],
+        name="Mensal",
+        marker_color="rgba(76,120,168,.8)",
         marker_line_width=0,
+        yaxis="y1",
         text=[f"R$ {v:,.0f}" for v in custo_mes[val_col]],
         textposition="outside",
-        hovertemplate="%{x}<br>R$ %{y:,.2f}<extra>Mensal</extra>",
+        hovertemplate="%{x}<br>Mensal: R$ %{y:,.2f}<extra></extra>",
     ))
 
     titulo = "<b>Evolução Mensal de Desembolsos"
@@ -338,10 +346,21 @@ def grafico_evolucao_mensal_projeto(df_custos_proj: pd.DataFrame,
     fig.update_layout(
         **LAYOUT_BASE,
         title=titulo,
-        barmode="overlay",
-        yaxis=dict(title="R$", tickprefix="R$ ", tickformat=",.0f",
-                   gridcolor="rgba(128,128,128,.15)"),
+        yaxis=dict(
+            title="Desembolso Mensal (R$)",
+            tickprefix="R$ ", tickformat=",.0f",
+            gridcolor="rgba(128,128,128,.15)",
+        ),
+        yaxis2=dict(
+            title="Acumulado (R$)",
+            tickprefix="R$ ", tickformat=",.0f",
+            overlaying="y",
+            side="right",
+            gridcolor="rgba(0,0,0,0)",
+            showgrid=False,
+        ),
         hovermode="x unified",
         showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     return fig
