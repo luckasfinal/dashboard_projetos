@@ -196,16 +196,20 @@ with tab_resumo:
             if ref > prev_d:
                 n_atrasados += 1
 
+    # Linha 1: Orçamento Total | Realizado Total | Saldo Consolidado
     r1c1, r1c2, r1c3 = st.columns(3)
-    r1c1.metric("📁 Projetos ativos", str(n_proj))
-    r1c2.metric("💰 Realizado",       formata_brl(total_custo))
-    r1c3.metric("🎯 Orçamento",       formata_brl(total_orc) if tem_orc else "Não cadastrado")
+    r1c1.metric("🎯 Orçamento Total",  formata_brl(total_orc) if tem_orc else "Não cadastrado")
+    r1c2.metric("💰 Realizado Total",  formata_brl(total_custo))
+    r1c3.metric("💹 Saldo Consolidado",
+                formata_brl(saldo_total) if saldo_total is not None else "N/D",
+                delta=f"{pct_cons:.1f}% consumido" if pct_cons else None,
+                delta_color="inverse")
 
+    # Linha 2: Projetos Ativos | Horas Totais | Com Atraso
     r2c1, r2c2, r2c3 = st.columns(3)
-    r2c1.metric("💹 Saldo",        formata_brl(saldo_total) if saldo_total is not None else "N/D",
-                delta=f"{pct_cons:.1f}% consumido" if pct_cons else None, delta_color="inverse")
-    r2c2.metric("⏱️ Horas Totais", f"{total_horas:,.0f} h")
-    r2c3.metric("⚠️ Com atraso",   str(n_atrasados))
+    r2c1.metric("📁 Projetos Ativos", str(n_proj))
+    r2c2.metric("⏱️ Horas Totais",    f"{total_horas:,.0f} h")
+    r2c3.metric("⚠️ Com Atraso",      str(n_atrasados))
 
     st.markdown("")
 
