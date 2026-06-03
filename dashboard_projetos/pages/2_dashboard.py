@@ -176,7 +176,7 @@ def _cor_pct(val):
 
 styler = tabela.style.format(fmt)
 if "% Orç." in tabela.columns:
-    styler = styler.applymap(_cor_pct, subset=["% Orç."])
+    styler = styler.map(_cor_pct, subset=["% Orç."])
 
 st.dataframe(styler, use_container_width=True, hide_index=True)
 
