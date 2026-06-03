@@ -12,7 +12,7 @@ from utils.db   import init_db, migrar_db
 from utils.auth import autenticado, exibir_login, logout, perfil_admin
 
 st.set_page_config(
-    page_title="Dashboard de Projetos",
+    page_title="Mobilidade Elétrica - Dashboard de Projetos",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="auto",
