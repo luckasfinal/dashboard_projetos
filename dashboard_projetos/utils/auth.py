@@ -103,7 +103,7 @@ def exibir_login() -> None:
     _, col, _ = st.columns([1, 1.6, 1])
     with col:
         st.markdown("<div class='login-logo'>📊</div>", unsafe_allow_html=True)
-        st.markdown("<div class='login-title'>Dashboard de Projetos</div>", unsafe_allow_html=True)
+        st.markdown("<div class='login-title'>Mobilidade Elétrica - Dashboard de Projetos</div>", unsafe_allow_html=True)
         st.markdown("<div class='login-sub'>Faça login para continuar</div>", unsafe_allow_html=True)
 
         with st.form("form_login", clear_on_submit=False):
