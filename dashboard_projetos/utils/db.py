@@ -40,7 +40,6 @@ COLUNAS_DB_ORCAMENTOS = [
     "real_viabilidade", "real_qualidade", "real_aprov_lancamento", "real_lancamento",
 ]
 
-# Tipo SQLite de cada coluna (usado na migração)
 TIPOS_CUSTOS = {
     "data": "TEXT", "ano": "TEXT", "mes": "TEXT", "filial": "TEXT",
     "area": "TEXT", "centro_de_custo": "TEXT", "conta": "TEXT",
@@ -75,7 +74,6 @@ TIPOS_ORCAMENTOS = {
 
 
 def init_db() -> None:
-    """Cria as tabelas se ainda não existirem."""
     with _conn() as con:
         con.executescript("""
             CREATE TABLE IF NOT EXISTS custos (
@@ -127,10 +125,6 @@ def init_db() -> None:
 
 
 def migrar_db() -> None:
-    """
-    Adiciona colunas que ainda não existem no banco (migração não-destrutiva).
-    Garante que um banco criado com schema antigo funcione sem perder dados.
-    """
     with _conn() as con:
         for tabela, colunas, tipos in [
             ("custos",                COLUNAS_DB_CUSTOS,      TIPOS_CUSTOS),
@@ -146,7 +140,7 @@ def migrar_db() -> None:
 
 
 # ─────────────────────────────────────────────────────
-# Gravação — custos e horas (sem alteração)
+# Gravação — custos e horas
 # ─────────────────────────────────────────────────────
 
 def _ja_importado(arquivo: str, tipo: str) -> bool:
@@ -203,7 +197,6 @@ def salvar_orcamento(
     real_aprov_lancamento: str | None,
     real_lancamento: str | None,
 ) -> None:
-    """Insere ou atualiza (UPSERT) o registro de orçamento/cronograma do projeto."""
     with _conn() as con:
         con.execute("""
             INSERT INTO orcamentos_cronograma (
@@ -246,13 +239,11 @@ def carregar_horas() -> pd.DataFrame:
 
 
 def carregar_orcamentos() -> pd.DataFrame:
-    """Retorna todos os registros da tabela orcamentos_cronograma."""
     with _conn() as con:
         return pd.read_sql("SELECT * FROM orcamentos_cronograma", con)
 
 
 def carregar_orcamento_projeto(projeto: str) -> dict | None:
-    """Retorna o registro de orçamento/cronograma de um projeto específico, ou None."""
     with _conn() as con:
         cur = con.execute(
             "SELECT * FROM orcamentos_cronograma WHERE projeto = ?", (projeto,)
@@ -285,6 +276,54 @@ def deletar_importacao(nome_arquivo: str, tipo: str) -> int:
             (nome_arquivo, tipo),
         )
         return cur.rowcount
+
+
+def deletar_orcamento_projeto(projeto: str) -> bool:
+    """Remove o orçamento/cronograma de um projeto específico. Retorna True se removeu."""
+    with _conn() as con:
+        cur = con.execute(
+            "DELETE FROM orcamentos_cronograma WHERE projeto = ?", (projeto,)
+        )
+        return cur.rowcount > 0
+
+
+def deletar_projeto_completo(projeto: str) -> dict:
+    """
+    Remove TODOS os dados de um projeto em uma única transação:
+      - custos (WHERE centro_de_custo = projeto)
+      - horas  (WHERE c_custo = projeto)
+      - registros de importacoes cujos arquivos só tinham dados deste projeto
+      - orçamento/cronograma
+
+    Retorna dict com contagem de linhas removidas por tabela.
+    """
+    with _conn() as con:
+        r_custos = con.execute(
+            "DELETE FROM custos WHERE centro_de_custo = ?", (projeto,)
+        ).rowcount
+
+        r_horas = con.execute(
+            "DELETE FROM horas WHERE c_custo = ?", (projeto,)
+        ).rowcount
+
+        r_orc = con.execute(
+            "DELETE FROM orcamentos_cronograma WHERE projeto = ?", (projeto,)
+        ).rowcount
+
+        # Remove da tabela de importações os arquivos que não têm mais
+        # nenhuma linha nas tabelas de custos ou horas
+        con.execute("""
+            DELETE FROM importacoes
+            WHERE tipo = 'custos'
+              AND arquivo NOT IN (SELECT DISTINCT arquivo FROM custos)
+        """)
+        con.execute("""
+            DELETE FROM importacoes
+            WHERE tipo = 'horas'
+              AND arquivo NOT IN (SELECT DISTINCT arquivo FROM horas)
+        """)
+
+    return {"custos": r_custos, "horas": r_horas, "orcamento": r_orc}
 
 
 def limpar_tudo() -> None:
