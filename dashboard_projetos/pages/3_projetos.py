@@ -219,10 +219,12 @@ with tab_resumo:
                 st.plotly_chart(
                     charts.gauge_orcamento(nome_gauge, row["pct_orcamento"]),
                     use_container_width=True,
+                    key=f"gauge_resumo_{row['projeto']}_{i}",
                 )
         st.divider()
     else:
-        st.plotly_chart(charts.grafico_realizado_por_projeto(df_f), use_container_width=True)
+        st.plotly_chart(charts.grafico_realizado_por_projeto(df_f),
+                        use_container_width=True, key="grafico_realizado_resumo")
         st.divider()
 
     # Tabela de status
@@ -345,6 +347,7 @@ with tab_detalhe:
             st.plotly_chart(
                 charts.grafico_horas_colaborador(df_h_proj, row.get("nome_projeto", cc)),
                 use_container_width=True,
+                key=f"horas_colab_{cc}",
             )
             st.divider()
 
@@ -358,4 +361,5 @@ with tab_detalhe:
                     df_c_proj, row.get("nome_projeto", cc)
                 ),
                 use_container_width=True,
+                key=f"evolucao_mensal_{cc}",
             )
