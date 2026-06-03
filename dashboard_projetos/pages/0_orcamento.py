@@ -8,14 +8,13 @@ if str(_ROOT) not in sys.path:
 
 import streamlit as st
 import pandas as pd
-from utils.db import init_db, migrar_db, salvar_orcamento, carregar_orcamento_projeto
+from utils.db import init_db, migrar_db, salvar_orcamento, carregar_orcamento_projeto, deletar_projeto_completo
 from utils.data_processor import agregar_tudo, formata_brl
 from utils.auth import perfil_admin
 
 init_db()
 migrar_db()
 
-# ── Controle de perfil ────────────────────────────────────────────────────────
 _admin = perfil_admin()
 
 st.title("📋 Planejamento de Orçamentos e Prazos")
@@ -35,11 +34,36 @@ if df_dashboard.empty:
 lista_cc         = sorted(df_dashboard["projeto"].unique().tolist())
 mapeamento_nomes = dict(zip(df_dashboard["projeto"], df_dashboard["nome_projeto"]))
 
+# ── Detecta troca de CC e limpa o formulário ──────────────────────────────────
+# Guarda qual CC estava selecionado antes. Se mudou, limpa as chaves do form
+# do session_state para forçar recarga dos dados do novo projeto.
+CHAVES_FORM = [
+    "##inicio_prev", "##viab_prev", "##viab_real",
+    "##qual_prev",   "##qual_real",
+    "##aprov_prev",  "##aprov_real",
+    "##lanc_prev",   "##lanc_real",
+]
+
+if "orc_cc_anterior" not in st.session_state:
+    st.session_state["orc_cc_anterior"] = None
+
 cc_selecionado = st.selectbox(
     "Selecione o Centro de Custo (CC) do Projeto:",
     options=lista_cc,
-    format_func=lambda x: f"{x} — {mapeamento_nomes.get(x, 'Sem Nome')}"
+    format_func=lambda x: f"{x} — {mapeamento_nomes.get(x, 'Sem Nome')}",
+    key="orc_cc_atual",
 )
+
+# Quando o CC muda, apaga as chaves do form e faz rerun para recarregar
+if st.session_state["orc_cc_anterior"] != cc_selecionado:
+    for chave in CHAVES_FORM:
+        st.session_state.pop(chave, None)
+    # também remove chaves com sufixo 🔵 (usadas nos date_inputs de "real")
+    for chave in list(st.session_state.keys()):
+        if chave.startswith("##") and "🔵" in chave:
+            st.session_state.pop(chave, None)
+    st.session_state["orc_cc_anterior"] = cc_selecionado
+    st.rerun()
 
 # ── 2. Dados já salvos ────────────────────────────────────────────────────────
 dados = carregar_orcamento_projeto(cc_selecionado)
@@ -70,10 +94,8 @@ if not linha.empty:
     realizado_proj = float(linha.iloc[0].get("valor_total", 0))
 
 # ── 3. Formulário ─────────────────────────────────────────────────────────────
-# O formulário é sempre exibido, mas os campos ficam disabled para visualizador
 with st.form("form_orcamento", clear_on_submit=False):
 
-    # — Financeiro ────────────────────────────────────────────────────────────
     st.subheader("💰 Orçamento")
     col_fin1, col_fin2 = st.columns(2)
     with col_fin1:
@@ -83,7 +105,7 @@ with st.form("form_orcamento", clear_on_submit=False):
             min_value=0.0,
             value=orcamento_atual,
             format="%.2f",
-            disabled=not _admin,   # ← somente leitura para visualizador
+            disabled=not _admin,
         )
     with col_fin2:
         st.text_input(
@@ -95,21 +117,19 @@ with st.form("form_orcamento", clear_on_submit=False):
 
     st.divider()
 
-    # — Cronograma ─────────────────────────────────────────────────────────────
     st.subheader("📅 Cronograma de Marcos")
     if _admin:
         st.caption("🔵 indica campo com dado já salvo — salvar irá atualizá-lo.")
     else:
         st.caption("🔵 indica campo com dado já salvo.")
 
-    # Cabeçalho
     h1, h2, h3 = st.columns([2, 2, 2])
     h1.markdown("**Marco**")
     h2.markdown("**🗓️ Data Prevista**")
     h3.markdown("**✅ Data Realizada**")
     st.markdown("<hr style='margin:4px 0 12px 0'>", unsafe_allow_html=True)
 
-    # Valores iniciais do banco
+    # Valores carregados do banco para o CC atual
     v = {k: _parse_date_or_none(dados.get(k)) if dados else None for k in [
         "data_inicio",
         "prev_viabilidade",      "real_viabilidade",
@@ -176,14 +196,13 @@ with st.form("form_orcamento", clear_on_submit=False):
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Botão de salvar — oculto para visualizador
     if _admin:
         botao_salvar = st.form_submit_button("💾 Salvar Dados do Projeto", type="primary")
     else:
         st.form_submit_button("💾 Salvar Dados do Projeto", type="primary", disabled=True)
         botao_salvar = False
 
-# ── 4. Salvamento — só admin ──────────────────────────────────────────────────
+# ── 4. Salvamento ─────────────────────────────────────────────────────────────
 if botao_salvar and _admin:
     try:
         salvar_orcamento(
@@ -274,5 +293,45 @@ if dados_atuais:
         use_container_width=True,
         hide_index=True,
     )
+
+    # ── Excluir dados do projeto — só admin ──────────────────────────────────
+    if _admin:
+        st.divider()
+        with st.expander("🗑️ Excluir todos os dados deste projeto"):
+            nome_proj = mapeamento_nomes.get(cc_selecionado, '')
+            st.warning(
+                f"Esta ação remove **permanentemente todos os dados** do projeto "
+                f"**{cc_selecionado} — {nome_proj}**, incluindo:\n\n"
+                f"- 💰 Lançamentos de custos\n"
+                f"- ⏱️ Registros de horas\n"
+                f"- 📋 Orçamento e cronograma de marcos\n\n"
+                f"Esta operação **não pode ser desfeita.**"
+            )
+            confirmacao = st.text_input(
+                "Digite EXCLUIR para confirmar:",
+                key="confirma_exclusao_projeto",
+                placeholder="EXCLUIR",
+            )
+            if st.button(
+                "🗑️ Excluir todos os dados do projeto",
+                disabled=(confirmacao != "EXCLUIR"),
+                type="secondary",
+            ):
+                resultado = deletar_projeto_completo(cc_selecionado)
+                agregar_tudo.clear()
+                for chave in CHAVES_FORM:
+                    st.session_state.pop(chave, None)
+                for chave in list(st.session_state.keys()):
+                    if chave.startswith("##") and "🔵" in chave:
+                        st.session_state.pop(chave, None)
+                st.session_state.pop("confirma_exclusao_projeto", None)
+                st.success(
+                    f"✅ Projeto **{cc_selecionado}** removido: "
+                    f"{resultado['custos']} lançamentos de custos, "
+                    f"{resultado['horas']} registros de horas, "
+                    f"{'orçamento e cronograma excluídos' if resultado['orcamento'] else 'sem orçamento cadastrado'}."
+                )
+                st.rerun()
+
 else:
     st.info("Preencha o formulário acima e salve para ver o resumo.")
