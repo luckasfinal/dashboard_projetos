@@ -356,11 +356,9 @@ def grafico_evolucao_mensal_projeto(df_custos_proj: pd.DataFrame,
             tickprefix="R$ ", tickformat=",.0f",
             overlaying="y",
             side="right",
-            gridcolor="rgba(0,0,0,0)",
             showgrid=False,
         ),
         hovermode="x unified",
         showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     return fig
