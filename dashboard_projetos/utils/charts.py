@@ -4,19 +4,17 @@ import pandas as pd
 
 CORES = px.colors.qualitative.Set2
 
+# LAYOUT_BASE sem margin e legend — cada função define os seus própria
+# para evitar conflito de kwargs duplicados no update_layout
 LAYOUT_BASE = dict(
     font_family="Inter, sans-serif",
     plot_bgcolor="rgba(0,0,0,0)",
     paper_bgcolor="rgba(0,0,0,0)",
-    margin=dict(l=20, r=20, t=44, b=20),
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    hoverlabel=dict(font_size=12),
 )
 
+_LEGEND_H = dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+_MARGIN   = dict(l=20, r=20, t=44, b=20)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Gráficos de visão geral
-# ─────────────────────────────────────────────────────────────────────────────
 
 def grafico_realizado_por_projeto(df: pd.DataFrame) -> go.Figure:
     eixo = "nome_projeto" if "nome_projeto" in df.columns else "projeto"
@@ -31,8 +29,8 @@ def grafico_realizado_por_projeto(df: pd.DataFrame) -> go.Figure:
     fig.update_layout(
         **LAYOUT_BASE,
         title="<b>Realizado por Projeto</b>",
-        yaxis=dict(tickprefix="R$ ", tickformat=",.0f",
-                   gridcolor="rgba(128,128,128,.15)"),
+        legend=_LEGEND_H, margin=_MARGIN,
+        yaxis=dict(tickprefix="R$ ", tickformat=",.0f", gridcolor="rgba(128,128,128,.15)"),
         xaxis=dict(tickangle=-30),
     )
     return fig
@@ -57,9 +55,9 @@ def grafico_custo_vs_orcamento(df: pd.DataFrame) -> go.Figure:
     fig.update_layout(
         **LAYOUT_BASE,
         title="<b>Realizado vs Orçamento</b>",
+        legend=_LEGEND_H, margin=_MARGIN,
         barmode="overlay",
-        yaxis=dict(tickprefix="R$ ", tickformat=",.0f",
-                   gridcolor="rgba(128,128,128,.15)"),
+        yaxis=dict(tickprefix="R$ ", tickformat=",.0f", gridcolor="rgba(128,128,128,.15)"),
         xaxis=dict(tickangle=-30),
     )
     return fig
@@ -79,21 +77,22 @@ def grafico_horas_por_projeto(df: pd.DataFrame) -> go.Figure:
         texttemplate="%{text:.0f} h", textposition="outside",
         hovertemplate="<b>%{y}</b><br>%{x:.0f} h<extra></extra>",
     )
-    fig.update_layout(**LAYOUT_BASE, coloraxis_showscale=False,
-                      xaxis=dict(gridcolor="rgba(128,128,128,.15)"))
+    fig.update_layout(
+        **LAYOUT_BASE,
+        legend=_LEGEND_H, margin=_MARGIN,
+        coloraxis_showscale=False,
+        xaxis=dict(gridcolor="rgba(128,128,128,.15)"),
+    )
     return fig
 
 
 def grafico_custo_por_hora(df: pd.DataFrame) -> go.Figure:
     eixo = "nome_projeto" if "nome_projeto" in df.columns else "projeto"
-    df_plot = df[df["custo_por_hora"] > 0].sort_values(
-        "custo_por_hora", ascending=False).head(20)
+    df_plot = df[df["custo_por_hora"] > 0].sort_values("custo_por_hora", ascending=False).head(20)
     fig = px.bar(
         df_plot, x=eixo, y="custo_por_hora",
         color="custo_por_hora",
-        color_continuous_scale=[[0, "rgba(34,197,94,.6)"],
-                                 [0.5, "rgba(234,179,8,.6)"],
-                                 [1, "rgba(220,38,38,.8)"]],
+        color_continuous_scale=[[0,"rgba(34,197,94,.6)"],[0.5,"rgba(234,179,8,.6)"],[1,"rgba(220,38,38,.8)"]],
         text=[f"R$ {v:.0f}" for v in df_plot["custo_por_hora"]],
         title="<b>Custo por Hora (R$/h)</b>",
     )
@@ -101,10 +100,13 @@ def grafico_custo_por_hora(df: pd.DataFrame) -> go.Figure:
         textposition="outside",
         hovertemplate="<b>%{x}</b><br>R$/h: R$ %{y:.2f}<extra></extra>",
     )
-    fig.update_layout(**LAYOUT_BASE, coloraxis_showscale=False,
-                      yaxis=dict(tickprefix="R$ ",
-                                 gridcolor="rgba(128,128,128,.15)"),
-                      xaxis=dict(tickangle=-30))
+    fig.update_layout(
+        **LAYOUT_BASE,
+        legend=_LEGEND_H, margin=_MARGIN,
+        coloraxis_showscale=False,
+        yaxis=dict(tickprefix="R$ ", gridcolor="rgba(128,128,128,.15)"),
+        xaxis=dict(tickangle=-30),
+    )
     return fig
 
 
@@ -120,31 +122,41 @@ def grafico_pizza_conta(df_custos: pd.DataFrame) -> go.Figure:
     if outros_val > 0:
         principais = pd.concat([
             principais,
-            pd.DataFrame([{"conta": "Outros", "realizado": outros_val,
-                           "pct": outros_val / total * 100}])
+            pd.DataFrame([{"conta": "Outros", "realizado": outros_val, "pct": outros_val/total*100}])
         ], ignore_index=True)
-    fig = px.pie(principais, names="conta", values="realizado",
-                 title="<b>Custos por Conta Contábil</b>",
-                 color_discrete_sequence=CORES, hole=0.45)
+    fig = px.pie(
+        principais, names="conta", values="realizado",
+        title="<b>Custos por Conta Contábil</b>",
+        color_discrete_sequence=CORES, hole=0.45,
+    )
     fig.update_traces(
-        # Percentual dentro do donut; label na legenda — evita sobreposição de texto externo
         textposition="inside",
         textinfo="percent",
-        hovertemplate="<b>%{label}</b><br>R$ %{value:,.2f}<br>%{percent}<extra></extra>",
         insidetextorientation="radial",
+        hovertemplate="<b>%{label}</b><br>R$ %{value:,.2f}<br>%{percent}<extra></extra>",
     )
-    fig.update_layout(**LAYOUT_BASE)
-    # Segunda chamada sobrescreve só legend/margin/height sem conflito de kwargs
     fig.update_layout(
-        legend=dict(
-            orientation="v",
-            yanchor="middle", y=0.5,
-            xanchor="left",   x=1.02,
-            font=dict(size=11),
-        ),
+        **LAYOUT_BASE,
+        # legenda vertical à direita — não sobrepõe as fatias
+        legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02, font=dict(size=11)),
         margin=dict(l=20, r=160, t=44, b=20),
         height=380,
     )
+    return fig
+
+
+def grafico_pizza_categorias(df_custos: pd.DataFrame) -> go.Figure:
+    col = "categoria" if "categoria" in df_custos.columns else (
+          "conta"     if "conta"     in df_custos.columns else None)
+    val = "realizado" if "realizado" in df_custos.columns else "valor"
+    if not col or val not in df_custos.columns:
+        return go.Figure()
+    agg = df_custos.groupby(col)[val].sum().reset_index()
+    fig = px.pie(agg, names=col, values=val,
+                 title="<b>Distribuição de Custos</b>",
+                 color_discrete_sequence=CORES, hole=0.45)
+    fig.update_traces(textposition="inside", textinfo="percent+label")
+    fig.update_layout(**LAYOUT_BASE, legend=_LEGEND_H, margin=_MARGIN)
     return fig
 
 
@@ -182,24 +194,20 @@ def grafico_evolucao_mensal(df_custos: pd.DataFrame,
     fig.update_layout(
         **LAYOUT_BASE,
         title="<b>Evolução Mensal — Realizado e Horas</b>",
+        legend=_LEGEND_H, margin=_MARGIN,
         yaxis=dict(title="Realizado (R$)", tickprefix="R$ ", tickformat=",.0f",
                    gridcolor="rgba(128,128,128,.15)"),
-        yaxis2=dict(title="Horas", overlaying="y", side="right",
-                    gridcolor="rgba(0,0,0,0)"),
+        yaxis2=dict(title="Horas", overlaying="y", side="right", showgrid=False),
         hovermode="x unified",
     )
     return fig
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Gauge de orçamento
-# ─────────────────────────────────────────────────────────────────────────────
-
 def gauge_orcamento(nome_projeto: str, pct: float) -> go.Figure:
-    max_val   = max(120, pct + 10) if pct > 100 else 120
-    cor_bar   = ("#dc2626" if pct > 100 else
-                 "#f59e0b" if pct >= 90 else
-                 "#f59e0b" if pct >= 70 else "#22c55e")
+    max_val = max(120, pct + 10) if pct > 100 else 120
+    cor_bar = ("#dc2626" if pct > 100 else
+               "#f59e0b" if pct >= 90 else
+               "#f59e0b" if pct >= 70 else "#22c55e")
     steps = [
         {"range": [0,   70],  "color": "rgba(34,197,94,.08)"},
         {"range": [70,  90],  "color": "rgba(234,179,8,.08)"},
@@ -215,24 +223,19 @@ def gauge_orcamento(nome_projeto: str, pct: float) -> go.Figure:
     fig = go.Figure(go.Indicator(
         mode="gauge+number+delta",
         value=pct,
-        number={"suffix": "%", "font": {"size": 22, "color": cor_bar},
-                "valueformat": ".1f"},
-        delta={"reference": 100, "relative": False, "valueformat": ".1f",
-               "suffix": "pp",
-               "increasing": {"color": "#f87171"},
-               "decreasing": {"color": "#4ade80"}},
+        number={"suffix": "%", "font": {"size": 22, "color": cor_bar}, "valueformat": ".1f"},
+        delta={"reference": 100, "relative": False, "valueformat": ".1f", "suffix": "pp",
+               "increasing": {"color": "#f87171"}, "decreasing": {"color": "#4ade80"}},
         title={"text": titulo, "font": {"size": 12}},
         gauge={
             "axis": {"range": [0, max_val], "tickwidth": 1,
                      "tickvals": [0, 25, 50, 75, 100] + ([max_val] if pct > 100 else []),
-                     "tickfont": {"size": 10},
-                     "tickcolor": "rgba(128,128,128,.5)"},
+                     "tickfont": {"size": 10}, "tickcolor": "rgba(128,128,128,.5)"},
             "bar":       {"color": cor_bar, "thickness": 0.28},
             "bgcolor":   "rgba(0,0,0,0)",
             "borderwidth": 0,
             "steps":     steps,
-            "threshold": {"line": {"color": "#ef4444", "width": 3},
-                          "thickness": 0.75, "value": 100},
+            "threshold": {"line": {"color": "#ef4444", "width": 3}, "thickness": 0.75, "value": 100},
         },
     ))
     fig.update_layout(
@@ -243,24 +246,14 @@ def gauge_orcamento(nome_projeto: str, pct: float) -> go.Figure:
     return fig
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Horas por colaborador — com área (cc_origem / descricao_cc_origem)
-# ─────────────────────────────────────────────────────────────────────────────
-
 def grafico_horas_colaborador(df_horas: pd.DataFrame,
                                nome_projeto: str | None = None) -> go.Figure:
-    """
-    Barras horizontais de horas por colaborador.
-    Se a coluna 'descricao_cc_origem' ou 'area' existir, exibe 'Nome — Área'
-    para facilitar a identificação do colaborador.
-    """
     df = df_horas.copy()
     col_nome = next((c for c in ["nome", "colaborador"] if c in df.columns), None)
     col_h    = next((c for c in ["hs_nor", "horas"]     if c in df.columns), None)
     if not col_nome or not col_h:
         return go.Figure()
 
-    # Cria label "Nome — Área" se área disponível
     col_area = next((c for c in ["descricao_cc_origem", "cc_origem", "area"]
                      if c in df.columns), None)
     if col_area:
@@ -280,10 +273,8 @@ def grafico_horas_colaborador(df_horas: pd.DataFrame,
     fig = px.bar(
         agg, x=col_h, y="_label", orientation="h",
         color=col_h,
-        color_continuous_scale=[[0, "rgba(76,120,168,.25)"],
-                                 [1, "rgba(76,120,168,.9)"]],
-        text=col_h,
-        title=titulo,
+        color_continuous_scale=[[0, "rgba(76,120,168,.25)"], [1, "rgba(76,120,168,.9)"]],
+        text=col_h, title=titulo,
     )
     fig.update_traces(
         texttemplate="%{text:.0f} h", textposition="outside",
@@ -291,6 +282,7 @@ def grafico_horas_colaborador(df_horas: pd.DataFrame,
     )
     fig.update_layout(
         **LAYOUT_BASE,
+        legend=_LEGEND_H, margin=_MARGIN,
         coloraxis_showscale=False,
         xaxis=dict(gridcolor="rgba(128,128,128,.15)"),
         yaxis_title=None,
@@ -298,17 +290,8 @@ def grafico_horas_colaborador(df_horas: pd.DataFrame,
     return fig
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Evolução mensal de desembolsos por projeto (área + colunas combinadas)
-# ─────────────────────────────────────────────────────────────────────────────
-
 def grafico_evolucao_mensal_projeto(df_custos_proj: pd.DataFrame,
                                     nome_projeto: str | None = None) -> go.Figure:
-    """
-    Gráfico combinado para um projeto específico:
-      - Área (fill) com a soma mensal de custos — fica atrás
-      - Barras com os valores mensais — fica na frente
-    """
     if df_custos_proj.empty:
         return go.Figure()
 
@@ -319,33 +302,24 @@ def grafico_evolucao_mensal_projeto(df_custos_proj: pd.DataFrame,
 
     custo_mes = (df_custos_proj.groupby(mes_col)[val_col].sum()
                  .reset_index().sort_values(mes_col))
-
-    # Acumulado: soma progressiva (running total) dos desembolsos
     custo_mes["acumulado"] = custo_mes[val_col].cumsum()
 
     fig = go.Figure()
 
-    # 1. Área com valor ACUMULADO — fica atrás (adicionada primeiro)
-    #    Usa eixo Y secundário para que sua escala maior não esmague as barras
     fig.add_trace(go.Scatter(
-        x=custo_mes[mes_col],
-        y=custo_mes["acumulado"],
+        x=custo_mes[mes_col], y=custo_mes["acumulado"],
         name="Acumulado",
         mode="lines",
         line=dict(color="rgba(76,120,168,.5)", width=2),
-        fill="tozeroy",
-        fillcolor="rgba(76,120,168,.10)",
+        fill="tozeroy", fillcolor="rgba(76,120,168,.10)",
         yaxis="y2",
         hovertemplate="%{x}<br>Acumulado: R$ %{y:,.2f}<extra></extra>",
     ))
 
-    # 2. Colunas com valor MENSAL — fica na frente, eixo Y principal
     fig.add_trace(go.Bar(
-        x=custo_mes[mes_col],
-        y=custo_mes[val_col],
+        x=custo_mes[mes_col], y=custo_mes[val_col],
         name="Mensal",
-        marker_color="rgba(76,120,168,.8)",
-        marker_line_width=0,
+        marker_color="rgba(76,120,168,.8)", marker_line_width=0,
         yaxis="y1",
         text=[f"R$ {v:,.0f}" for v in custo_mes[val_col]],
         textposition="outside",
@@ -360,18 +334,11 @@ def grafico_evolucao_mensal_projeto(df_custos_proj: pd.DataFrame,
     fig.update_layout(
         **LAYOUT_BASE,
         title=titulo,
-        yaxis=dict(
-            title="Desembolso Mensal (R$)",
-            tickprefix="R$ ", tickformat=",.0f",
-            gridcolor="rgba(128,128,128,.15)",
-        ),
-        yaxis2=dict(
-            title="Acumulado (R$)",
-            tickprefix="R$ ", tickformat=",.0f",
-            overlaying="y",
-            side="right",
-            showgrid=False,
-        ),
+        legend=_LEGEND_H, margin=_MARGIN,
+        yaxis=dict(title="Desembolso Mensal (R$)", tickprefix="R$ ", tickformat=",.0f",
+                   gridcolor="rgba(128,128,128,.15)"),
+        yaxis2=dict(title="Acumulado (R$)", tickprefix="R$ ", tickformat=",.0f",
+                    overlaying="y", side="right", showgrid=False),
         hovermode="x unified",
         showlegend=True,
     )
