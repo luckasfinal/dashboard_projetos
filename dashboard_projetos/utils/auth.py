@@ -1,3 +1,11 @@
+"""
+auth.py — Camada de autenticação simples (hardcoded).
+Gerencia sessão via st.session_state.
+
+Perfis disponíveis:
+  - "admin"      → acesso total
+  - "visualizador" → somente leitura
+"""
 import streamlit as st
 import hashlib
 
@@ -89,6 +97,7 @@ def exibir_login() -> None:
         font-size: 22px;
         font-weight: 700;
         margin-bottom: 4px;
+        line-height: 1.35;
     }
     .login-sub {
         text-align: center;
@@ -103,7 +112,11 @@ def exibir_login() -> None:
     _, col, _ = st.columns([1, 1.6, 1])
     with col:
         st.markdown("<div class='login-logo'>📊</div>", unsafe_allow_html=True)
-        st.markdown("<div class='login-title'>Mobilidade Elétrica - Dashboard de Projetos</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='login-title'>Mobilidade Elétrica<br>"
+            "<span style='font-size:16px;font-weight:500;opacity:.75'>Dashboard de Projetos</span></div>",
+            unsafe_allow_html=True,
+        )
         st.markdown("<div class='login-sub'>Faça login para continuar</div>", unsafe_allow_html=True)
 
         with st.form("form_login", clear_on_submit=False):
