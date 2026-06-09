@@ -1,7 +1,8 @@
 """
 db.py — camada de persistência SQLite
-Suporta migração automática: se o banco já existe com schema antigo,
-adiciona as colunas novas sem apagar dados.
+- WAL mode ativado para durabilidade e concorrência
+- Migração automática não-destrutiva
+- Suporte a nomes de projeto editáveis e previsões por período
 """
 import sqlite3
 import pandas as pd
@@ -12,11 +13,16 @@ DB_PATH = Path(__file__).parent.parent / "data" / "dashboard.db"
 
 def _conn() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+    con = sqlite3.connect(DB_PATH, check_same_thread=False)
+    # WAL mode: garante durabilidade mesmo com reinicializações do servidor
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA synchronous=NORMAL")
+    con.execute("PRAGMA foreign_keys=ON")
+    return con
 
 
 # ─────────────────────────────────────────────────────
-# Definição completa das colunas esperadas
+# Colunas esperadas por tabela
 # ─────────────────────────────────────────────────────
 
 COLUNAS_DB_CUSTOS = [
@@ -34,7 +40,7 @@ COLUNAS_DB_HORAS = [
 ]
 
 COLUNAS_DB_ORCAMENTOS = [
-    "projeto", "orcamento_previsto",
+    "projeto", "nome_projeto_editado", "orcamento_previsto",
     "data_inicio",
     "prev_viabilidade", "prev_qualidade", "prev_aprov_lancamento", "prev_lancamento",
     "real_viabilidade", "real_qualidade", "real_aprov_lancamento", "real_lancamento",
@@ -59,28 +65,24 @@ TIPOS_HORAS = {
 }
 
 TIPOS_ORCAMENTOS = {
-    "projeto": "TEXT",
-    "orcamento_previsto": "REAL",
-    "data_inicio": "TEXT",
-    "prev_viabilidade": "TEXT",
-    "prev_qualidade": "TEXT",
-    "prev_aprov_lancamento": "TEXT",
-    "prev_lancamento": "TEXT",
-    "real_viabilidade": "TEXT",
-    "real_qualidade": "TEXT",
-    "real_aprov_lancamento": "TEXT",
-    "real_lancamento": "TEXT",
+    "projeto": "TEXT", "nome_projeto_editado": "TEXT",
+    "orcamento_previsto": "REAL", "data_inicio": "TEXT",
+    "prev_viabilidade": "TEXT", "prev_qualidade": "TEXT",
+    "prev_aprov_lancamento": "TEXT", "prev_lancamento": "TEXT",
+    "real_viabilidade": "TEXT", "real_qualidade": "TEXT",
+    "real_aprov_lancamento": "TEXT", "real_lancamento": "TEXT",
 }
 
 
 def init_db() -> None:
+    """Cria tabelas se não existirem."""
     with _conn() as con:
         con.executescript("""
             CREATE TABLE IF NOT EXISTS custos (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 arquivo      TEXT NOT NULL,
                 importado_em TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-                data         TEXT, ano TEXT, mes TEXT, filial TEXT, area TEXT,
+                data TEXT, ano TEXT, mes TEXT, filial TEXT, area TEXT,
                 centro_de_custo TEXT, conta TEXT, cod_parceiro_negocio TEXT,
                 parceiro_negocio TEXT, historico TEXT, realizado REAL
             );
@@ -109,6 +111,7 @@ def init_db() -> None:
 
             CREATE TABLE IF NOT EXISTS orcamentos_cronograma (
                 projeto                 TEXT PRIMARY KEY,
+                nome_projeto_editado    TEXT,
                 orcamento_previsto      REAL DEFAULT 0,
                 data_inicio             TEXT,
                 prev_viabilidade        TEXT,
@@ -121,15 +124,27 @@ def init_db() -> None:
                 real_lancamento         TEXT,
                 atualizado_em           TEXT DEFAULT (datetime('now','localtime'))
             );
+
+            CREATE TABLE IF NOT EXISTS previsoes_periodo (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                projeto      TEXT NOT NULL,
+                periodo      TEXT NOT NULL,
+                tipo_periodo TEXT NOT NULL DEFAULT 'anual',
+                descricao    TEXT,
+                valor        REAL NOT NULL DEFAULT 0,
+                atualizado_em TEXT DEFAULT (datetime('now','localtime')),
+                UNIQUE(projeto, periodo, tipo_periodo)
+            );
         """)
 
 
 def migrar_db() -> None:
+    """Migração não-destrutiva: adiciona colunas novas sem apagar dados."""
     with _conn() as con:
         for tabela, colunas, tipos in [
-            ("custos",                COLUNAS_DB_CUSTOS,      TIPOS_CUSTOS),
-            ("horas",                 COLUNAS_DB_HORAS,       TIPOS_HORAS),
-            ("orcamentos_cronograma", COLUNAS_DB_ORCAMENTOS,  TIPOS_ORCAMENTOS),
+            ("custos",                COLUNAS_DB_CUSTOS,     TIPOS_CUSTOS),
+            ("horas",                 COLUNAS_DB_HORAS,      TIPOS_HORAS),
+            ("orcamentos_cronograma", COLUNAS_DB_ORCAMENTOS, TIPOS_ORCAMENTOS),
         ]:
             cur = con.execute(f"PRAGMA table_info({tabela})")
             existentes = {row[1] for row in cur.fetchall()}
@@ -137,6 +152,20 @@ def migrar_db() -> None:
                 if col not in existentes:
                     tipo = tipos.get(col, "TEXT")
                     con.execute(f"ALTER TABLE {tabela} ADD COLUMN {col} {tipo}")
+
+        # Garante tabela de previsoes_periodo
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS previsoes_periodo (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                projeto       TEXT NOT NULL,
+                periodo       TEXT NOT NULL,
+                tipo_periodo  TEXT NOT NULL DEFAULT 'anual',
+                descricao     TEXT,
+                valor         REAL NOT NULL DEFAULT 0,
+                atualizado_em TEXT DEFAULT (datetime('now','localtime')),
+                UNIQUE(projeto, periodo, tipo_periodo)
+            )
+        """)
 
 
 # ─────────────────────────────────────────────────────
@@ -181,7 +210,7 @@ def salvar_horas(df: pd.DataFrame, nome_arquivo: str) -> tuple[int, bool]:
 
 
 # ─────────────────────────────────────────────────────
-# Gravação — orçamentos e cronograma (UPSERT)
+# Gravação — orçamentos / cronograma
 # ─────────────────────────────────────────────────────
 
 def salvar_orcamento(
@@ -196,16 +225,18 @@ def salvar_orcamento(
     real_qualidade: str | None,
     real_aprov_lancamento: str | None,
     real_lancamento: str | None,
+    nome_projeto_editado: str | None = None,
 ) -> None:
     with _conn() as con:
         con.execute("""
             INSERT INTO orcamentos_cronograma (
-                projeto, orcamento_previsto, data_inicio,
+                projeto, nome_projeto_editado, orcamento_previsto, data_inicio,
                 prev_viabilidade, prev_qualidade, prev_aprov_lancamento, prev_lancamento,
                 real_viabilidade, real_qualidade, real_aprov_lancamento, real_lancamento,
                 atualizado_em
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
             ON CONFLICT(projeto) DO UPDATE SET
+                nome_projeto_editado    = excluded.nome_projeto_editado,
                 orcamento_previsto      = excluded.orcamento_previsto,
                 data_inicio             = excluded.data_inicio,
                 prev_viabilidade        = excluded.prev_viabilidade,
@@ -218,10 +249,54 @@ def salvar_orcamento(
                 real_lancamento         = excluded.real_lancamento,
                 atualizado_em           = datetime('now','localtime')
         """, (
-            projeto, orcamento_previsto, data_inicio,
+            projeto, nome_projeto_editado, orcamento_previsto, data_inicio,
             prev_viabilidade, prev_qualidade, prev_aprov_lancamento, prev_lancamento,
             real_viabilidade, real_qualidade, real_aprov_lancamento, real_lancamento,
         ))
+
+
+# ─────────────────────────────────────────────────────
+# Previsões por período
+# ─────────────────────────────────────────────────────
+
+def salvar_previsao_periodo(
+    projeto: str,
+    periodo: str,
+    valor: float,
+    tipo_periodo: str = "anual",
+    descricao: str | None = None,
+) -> None:
+    """Insere ou atualiza previsão orçamentária de um período."""
+    with _conn() as con:
+        con.execute("""
+            INSERT INTO previsoes_periodo (projeto, periodo, tipo_periodo, descricao, valor, atualizado_em)
+            VALUES (?, ?, ?, ?, ?, datetime('now','localtime'))
+            ON CONFLICT(projeto, periodo, tipo_periodo) DO UPDATE SET
+                descricao    = excluded.descricao,
+                valor        = excluded.valor,
+                atualizado_em = datetime('now','localtime')
+        """, (projeto, periodo, tipo_periodo, descricao, valor))
+
+
+def deletar_previsao_periodo(id_previsao: int) -> None:
+    with _conn() as con:
+        con.execute("DELETE FROM previsoes_periodo WHERE id = ?", (id_previsao,))
+
+
+def carregar_previsoes_projeto(projeto: str) -> pd.DataFrame:
+    with _conn() as con:
+        return pd.read_sql(
+            "SELECT * FROM previsoes_periodo WHERE projeto = ? ORDER BY periodo, tipo_periodo",
+            con, params=(projeto,)
+        )
+
+
+def carregar_todas_previsoes() -> pd.DataFrame:
+    with _conn() as con:
+        return pd.read_sql(
+            "SELECT * FROM previsoes_periodo ORDER BY projeto, periodo",
+            con,
+        )
 
 
 # ─────────────────────────────────────────────────────
@@ -279,7 +354,6 @@ def deletar_importacao(nome_arquivo: str, tipo: str) -> int:
 
 
 def deletar_orcamento_projeto(projeto: str) -> bool:
-    """Remove o orçamento/cronograma de um projeto específico. Retorna True se removeu."""
     with _conn() as con:
         cur = con.execute(
             "DELETE FROM orcamentos_cronograma WHERE projeto = ?", (projeto,)
@@ -288,30 +362,19 @@ def deletar_orcamento_projeto(projeto: str) -> bool:
 
 
 def deletar_projeto_completo(projeto: str) -> dict:
-    """
-    Remove TODOS os dados de um projeto em uma única transação:
-      - custos (WHERE centro_de_custo = projeto)
-      - horas  (WHERE c_custo = projeto)
-      - registros de importacoes cujos arquivos só tinham dados deste projeto
-      - orçamento/cronograma
-
-    Retorna dict com contagem de linhas removidas por tabela.
-    """
     with _conn() as con:
         r_custos = con.execute(
             "DELETE FROM custos WHERE centro_de_custo = ?", (projeto,)
         ).rowcount
-
         r_horas = con.execute(
             "DELETE FROM horas WHERE c_custo = ?", (projeto,)
         ).rowcount
-
         r_orc = con.execute(
             "DELETE FROM orcamentos_cronograma WHERE projeto = ?", (projeto,)
         ).rowcount
-
-        # Remove da tabela de importações os arquivos que não têm mais
-        # nenhuma linha nas tabelas de custos ou horas
+        con.execute("""
+            DELETE FROM previsoes_periodo WHERE projeto = ?
+        """, (projeto,))
         con.execute("""
             DELETE FROM importacoes
             WHERE tipo = 'custos'
@@ -322,10 +385,12 @@ def deletar_projeto_completo(projeto: str) -> dict:
             WHERE tipo = 'horas'
               AND arquivo NOT IN (SELECT DISTINCT arquivo FROM horas)
         """)
-
     return {"custos": r_custos, "horas": r_horas, "orcamento": r_orc}
 
 
 def limpar_tudo() -> None:
     with _conn() as con:
-        con.executescript("DELETE FROM custos; DELETE FROM horas; DELETE FROM importacoes;")
+        con.executescript(
+            "DELETE FROM custos; DELETE FROM horas; "
+            "DELETE FROM importacoes; DELETE FROM previsoes_periodo;"
+        )
