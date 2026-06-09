@@ -136,12 +136,12 @@ def grafico_pizza_conta(df_custos: pd.DataFrame) -> go.Figure:
     fig.update_layout(
         **LAYOUT_BASE,
         # Legenda à direita para não sobrepor fatias
-        legend=dict(
-            orientation="v",
-            yanchor="middle", y=0.5,
-            xanchor="left",   x=1.02,
-            font=dict(size=11),
-        ),
+#        legend=dict(
+#            orientation="v",
+#            yanchor="middle", y=0.5,
+#            xanchor="left",   x=1.02,
+#            font=dict(size=11),
+#        ),
         margin=dict(l=20, r=160, t=44, b=20),
         height=380,
     )
