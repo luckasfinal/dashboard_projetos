@@ -288,7 +288,7 @@ def agregar_tudo() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
     # ── Merge com orçamentos/cronograma ───────────────────────────────────────
     COLUNAS_ORC = [
-        "projeto", "orcamento_previsto",
+        "projeto", "nome_projeto_editado", "orcamento_previsto",
         "data_inicio",
         "prev_viabilidade", "prev_qualidade", "prev_aprov_lancamento", "prev_lancamento",
         "real_viabilidade", "real_qualidade", "real_aprov_lancamento", "real_lancamento",
@@ -300,7 +300,8 @@ def agregar_tudo() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         merged["orcamento_previsto"] = pd.to_numeric(merged["orcamento_previsto"], errors="coerce").fillna(0)
     else:
         merged["orcamento_previsto"] = 0.0
-        for col in COLUNAS_ORC[2:]:  # colunas de data
+        merged["nome_projeto_editado"] = None
+        for col in COLUNAS_ORC[3:]:  # colunas de data
             merged[col] = None
 
     # Compatibilidade: mantém 'orcamento' apontando para orcamento_previsto
@@ -319,6 +320,31 @@ def agregar_tudo() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
     if "nome_projeto" in merged.columns:
         merged["nome_projeto"] = merged["nome_projeto"].replace(0, "Descrição do projeto não disponível")
+
+    # Se o usuário editou o nome do projeto, usa o nome editado
+    if "nome_projeto_editado" in merged.columns:
+        mask = merged["nome_projeto_editado"].notna() & (merged["nome_projeto_editado"].astype(str).str.strip() != "")
+        merged.loc[mask, "nome_projeto"] = merged.loc[mask, "nome_projeto_editado"]
+
+    # ── Corrigir mes_ref de horas: garante que jan/fev 2026 sejam parseados corretamente
+    # O campo 'periodo' às vezes vem como número serial Excel (ex: 46023) — converte via origin
+    if not df_horas.empty and "periodo" in df_horas.columns:
+        def _parse_periodo_robusto(serie: pd.Series) -> pd.Series:
+            # Tenta datetime normal primeiro
+            parsed = pd.to_datetime(serie, dayfirst=True, errors="coerce")
+            # Para valores ainda NaT, tenta interpretar como serial Excel (número)
+            mask_nat = parsed.isna()
+            if mask_nat.any():
+                numericos = pd.to_numeric(serie[mask_nat], errors="coerce")
+                mask_num = numericos.notna()
+                if mask_num.any():
+                    from datetime import datetime as _dt
+                    # Excel serial: 1 = 1900-01-01
+                    parsed[mask_nat & mask_num] = pd.to_datetime(
+                        numericos[mask_num] - 25569, unit="D", origin="1970-01-01", errors="coerce"
+                    )
+            return parsed
+        df_horas["mes_ref"] = _parse_periodo_robusto(df_horas["periodo"]).dt.to_period("M").astype(str)
 
     return merged, df_custos, df_horas
 
