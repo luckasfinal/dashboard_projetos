@@ -9,7 +9,7 @@ LAYOUT_BASE = dict(
     plot_bgcolor="rgba(0,0,0,0)",
     paper_bgcolor="rgba(0,0,0,0)",
     margin=dict(l=20, r=20, t=44, b=20),
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    #legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     hoverlabel=dict(font_size=12),
 )
 
