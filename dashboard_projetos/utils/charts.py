@@ -39,10 +39,31 @@ def grafico_realizado_por_projeto(df: pd.DataFrame) -> go.Figure:
 def grafico_custo_vs_orcamento(df: pd.DataFrame) -> go.Figure:
     eixo = "nome_projeto" if "nome_projeto" in df.columns else "projeto"
     fig = go.Figure()
+
+    # Destaque de estouro: barras "Realizado" ficam vermelhas quando
+    # valor_total > orcamento (e há orçamento cadastrado para o projeto)
+    cores_realizado = []
+    for _, r in df.iterrows():
+        orc = r.get("orcamento", 0) or 0
+        val = r.get("valor_total", 0) or 0
+        if orc > 0 and val > orc:
+            cores_realizado.append("#dc2626")   # vermelho — estouro
+        else:
+            cores_realizado.append("#4C78A8")   # azul padrão
+
+    textos_realizado = []
+    for _, r in df.iterrows():
+        orc = r.get("orcamento", 0) or 0
+        val = r.get("valor_total", 0) or 0
+        txt = f"R$ {val:,.0f}"
+        if orc > 0 and val > orc:
+            txt += " 🚨"
+        textos_realizado.append(txt)
+
     fig.add_trace(go.Bar(
         name="Realizado", x=df[eixo], y=df["valor_total"],
-        marker_color="#4C78A8", marker_line_width=0,
-        text=[f"R$ {v:,.0f}" for v in df["valor_total"]],
+        marker_color=cores_realizado, marker_line_width=0,
+        text=textos_realizado,
         textposition="outside",
         hovertemplate="<b>%{x}</b><br>Realizado: R$ %{y:,.2f}<extra></extra>",
     ))
@@ -54,7 +75,7 @@ def grafico_custo_vs_orcamento(df: pd.DataFrame) -> go.Figure:
         ))
     fig.update_layout(
         **LAYOUT_BASE,
-        title="<b>Realizado vs Orçamento</b>",
+        title="<b>Realizado vs Orçamento</b> <span style='font-size:11px;opacity:.6'>(🚨 = estouro de orçamento)</span>",
         legend=_LEGEND_H, margin=_MARGIN,
         barmode="overlay",
         yaxis=dict(tickprefix="R$ ", tickformat=",.0f", gridcolor="rgba(128,128,128,.15)"),
