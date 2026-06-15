@@ -12,7 +12,7 @@ from utils.data_processor import (
     agregar_tudo, formata_brl, formata_brl_curto, cor_status, cor_status_projeto,
     badge_status_projeto, agrupar_por_nome_projeto, render_selo_dados,
     aviso_truncamento, detectar_excecoes, render_faixa_alertas, projecao_burn_rate,
-    status_ativos, anos_default,
+    status_ativos, anos_default, rotulo_consumo,
 )
 from utils import charts
 
@@ -72,7 +72,7 @@ section[data-testid="stSidebar"] { min-width: 240px !important; max-width: 260px
 .consumo-status { flex:1.8; text-align:left; }
 .consumo-bar-wrap { flex:3; background:rgba(128,128,128,.18); border-radius:6px; height:10px; overflow:hidden; }
 .consumo-bar { height:100%; border-radius:6px; }
-.consumo-pct { flex:0.8; text-align:right; font-size:13px; font-weight:700; white-space:nowrap; }
+.consumo-pct { flex:1.1; text-align:right; font-size:13px; font-weight:700; white-space:nowrap; }
 .consumo-val { flex:1.6; text-align:right; font-size:12px; opacity:.7; white-space:nowrap; }
 </style>
 """, unsafe_allow_html=True)
@@ -312,7 +312,7 @@ with tab_resumo:
                 <div class='consumo-nome'>Projeto</div>
                 <div class='consumo-status'>Status</div>
                 <div class='consumo-bar-wrap' style='background:transparent'>Consumo</div>
-                <div class='consumo-pct'>%</div>
+                <div class='consumo-pct'>% · Faixa</div>
                 <div class='consumo-val'>Realizado / Orçado</div>
             </div>""", unsafe_allow_html=True)
             for _, row in df_consumo.iterrows():
@@ -322,7 +322,7 @@ with tab_resumo:
                 status_proj = row.get("status_projeto", "")
                 badge = badge_status_projeto(status_proj) if status_proj else ""
                 largura = min(pct, 100)
-                alerta = " 🚨" if pct > 100 else ""
+                faixa = rotulo_consumo(pct)
                 st.markdown(f"""
                 <div class='consumo-row'>
                     <div class='consumo-nome'>{nome_proj}</div>
@@ -330,7 +330,7 @@ with tab_resumo:
                     <div class='consumo-bar-wrap'>
                         <div class='consumo-bar' style='width:{largura:.1f}%;background:{cor}'></div>
                     </div>
-                    <div class='consumo-pct' style='color:{cor}'>{pct:.1f}%{alerta}</div>
+                    <div class='consumo-pct' style='color:{cor}'>{pct:.1f}% · {faixa}</div>
                     <div class='consumo-val'>{formata_brl(row['valor_total'])} / {formata_brl(row['orcamento'])}</div>
                 </div>""", unsafe_allow_html=True)
     else:

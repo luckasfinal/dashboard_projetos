@@ -864,3 +864,26 @@ def anos_default(lista_anos: list) -> list:
     if atual in [str(a) for a in lista_anos]:
         return [a for a in lista_anos if str(a) == atual]
     return list(lista_anos)
+
+
+# ─────────────────────────────────────────────
+# Rótulo textual de consumo (Roadmap 5.1 — acessibilidade)
+# ─────────────────────────────────────────────
+
+def rotulo_consumo(pct: float) -> str:
+    """
+    Rótulo textual da faixa de consumo de orçamento, independente de cor
+    (acessível para daltônicos). Faixas:
+      > 100  -> "Estouro"
+      >= 80  -> "Atenção"
+      < 80   -> "Saudável"
+    """
+    try:
+        p = float(pct)
+    except (TypeError, ValueError):
+        return ""
+    if p > 100:
+        return "Estouro"
+    if p >= 80:
+        return "Atenção"
+    return "Saudável"

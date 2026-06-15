@@ -26,7 +26,18 @@ _admin = perfil_admin()
 
 st.title("📋 Planejamento de Orçamentos e Prazos")
 if not _admin:
-    st.info("👁️ Modo somente leitura — edição desabilitada para este perfil.")
+    st.info(
+        "👁️ **Modo de leitura.** Veja abaixo o resumo, o cronograma e as previsões "
+        "de cada projeto. Para editar, entre como administrador em **Alterar usuário** (barra lateral)."
+    )
+    # Oculta o formulário de edição (renderizado desabilitado) — visão limpa de leitura.
+    # O resumo, cronograma e previsões abaixo permanecem visíveis.
+    st.markdown("""
+    <style>
+    /* Esconde o formulário de orçamento no modo visualizador */
+    div[data-testid="stForm"] { display: none !important; }
+    </style>
+    """, unsafe_allow_html=True)
 
 # ── 1. Projetos disponíveis ───────────────────────────────────────────────────
 df_dashboard, _, _ = agregar_tudo()

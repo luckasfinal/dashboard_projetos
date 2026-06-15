@@ -22,6 +22,35 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── 5.4 — Ajustes responsivos globais (mobile) ────────────────────────────────
+# Reduz paddings, fontes de KPI e força colunas a empilhar em telas estreitas.
+st.markdown("""
+<style>
+/* Em telas estreitas, colunas do Streamlit empilham em vez de espremer */
+@media (max-width: 640px) {
+    div[data-testid="stHorizontalBlock"] {
+        flex-direction: column !important;
+        gap: 6px !important;
+    }
+    div[data-testid="column"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+    /* KPI um pouco menor no mobile para não cortar */
+    div[data-testid="metric-container"] [data-testid="stMetricValue"] {
+        font-size: 18px !important;
+    }
+    /* Reduz padding lateral do conteúdo principal */
+    .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
+    /* Títulos um pouco menores */
+    h1 { font-size: 1.5rem !important; }
+    h2 { font-size: 1.2rem !important; }
+}
+/* Tabelas roláveis horizontalmente em qualquer tela estreita */
+div[data-testid="stDataFrame"] { overflow-x: auto; }
+</style>
+""", unsafe_allow_html=True)
+
 # ── SEO / privacidade: solicita não-indexação a crawlers e IAs ────────────────
 # Best-effort: injeta <meta name="robots"> no <head> do documento pai.
 # Streamlit não expõe o <head> diretamente, então usamos um componente HTML
@@ -72,6 +101,18 @@ with st.sidebar:
         if st.button("🔑 Alterar usuário", use_container_width=True):
             solicitar_login()
             st.rerun()
+
+    # ── 5.5 — Onboarding mínimo: fluxo de uso ─────────────────────────────────
+    with st.expander("❓ Como usar este painel"):
+        st.markdown(
+            "**Fluxo recomendado:**\n\n"
+            "1. **📤 Upload de Arquivos** — importe as planilhas de custos e horas.\n"
+            "2. **📋 Orçamentos** — cadastre orçamento, status e datas de cada projeto.\n"
+            "3. **📊 Dashboard Financeiro** — acompanhe custos e orçamento.\n"
+            "4. **📈 Andamento dos Projetos** — acompanhe prazos, status e alertas.\n\n"
+            "Use os **filtros** na barra lateral para focar em projetos, anos ou status. "
+            "Passe o mouse sobre os indicadores para ver o **valor exato**."
+        )
 
 # ── Páginas — visíveis para ambos os perfis ───────────────────────────────────
 # O controle de ações (salvar/upload/deletar) é feito dentro de cada página
