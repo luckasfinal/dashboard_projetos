@@ -1,0 +1,5 @@
+# Configuração do Streamlit
+# enableStaticServing permite servir arquivos da pasta ./static/
+# em /static/<arquivo> — usado aqui para hospedar um robots.txt de orientação.
+[server]
+enableStaticServing = true
