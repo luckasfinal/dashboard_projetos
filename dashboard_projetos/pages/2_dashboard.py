@@ -7,7 +7,7 @@ if str(_ROOT) not in sys.path:
 import streamlit as st
 import pandas as pd
 from utils.db import init_db
-from utils.data_processor import agregar_tudo, formata_brl, formata_brl_curto, cor_status, cor_status_projeto, render_selo_dados, aviso_truncamento
+from utils.data_processor import agregar_tudo, formata_brl, formata_brl_curto, cor_status, cor_status_projeto, render_selo_dados, aviso_truncamento, detectar_excecoes
 from utils import charts
 
 init_db()
@@ -108,6 +108,9 @@ total_orc     = df_f["orcamento"].sum() if tem_orc else 0
 saldo_total   = total_orc - total_custo  if tem_orc else None
 pct_consumido = (total_custo / total_orc * 100) if tem_orc and total_orc > 0 else None
 
+# Exceções para enriquecer o KPI de Saldo (Fase 2.2)
+exc = detectar_excecoes(df_f)
+
 # Linha 1 — valores abreviados; valor cheio no tooltip (help)
 l1c1, l1c2, l1c3 = st.columns(3)
 l1c1.metric(
@@ -120,12 +123,24 @@ l1c2.metric(
     formata_brl_curto(total_custo),
     help=f"Valor exato: {formata_brl(total_custo)}",
 )
+
+if exc["n_estouro"] > 0:
+    saldo_delta = f"🚨 {exc['n_estouro']} em estouro · +{formata_brl_curto(exc['excedente_total'])}"
+    saldo_help = (
+        f"Saldo exato: {formata_brl(saldo_total) if saldo_total is not None else 'N/D'}\n\n"
+        f"{exc['n_estouro']} projeto(s) acima do orçamento, "
+        f"somando {formata_brl(exc['excedente_total'])} de excedente."
+    )
+else:
+    saldo_delta = f"{pct_consumido:.1f}% consumido" if pct_consumido else None
+    saldo_help = f"Valor exato: {formata_brl(saldo_total)}" if saldo_total is not None else None
+
 l1c3.metric(
     "💹 Saldo Consolidado",
     formata_brl_curto(saldo_total) if saldo_total is not None else "N/D",
-    delta=f"{pct_consumido:.1f}% consumido" if pct_consumido else None,
+    delta=saldo_delta,
     delta_color="inverse",
-    help=f"Valor exato: {formata_brl(saldo_total)}" if saldo_total is not None else None,
+    help=saldo_help,
 )
 
 # Linha 2
