@@ -43,7 +43,10 @@ import unicodedata
 import pandas as pd
 import streamlit as st
 
-from utils.db import carregar_custos, carregar_horas, carregar_orcamentos, STATUS_OPCOES, STATUS_DEFAULT
+from utils.db import (
+    carregar_custos, carregar_horas, carregar_orcamentos,
+    listar_importacoes, STATUS_OPCOES, STATUS_DEFAULT,
+)
 import re
 
 # ─────────────────────────────────────────────
@@ -365,6 +368,78 @@ def agregar_tudo() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
 def formata_brl(valor: float) -> str:
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+# ─────────────────────────────────────────────
+# Selo de atualização e completude (Roadmap 1.1)
+# ─────────────────────────────────────────────
+
+def info_atualizacao(df_dashboard: pd.DataFrame) -> dict:
+    """
+    Retorna metadados para o selo de confiança exibido no topo das
+    páginas de análise:
+      - ultima_importacao (str dd/mm/aaaa HH:MM ou None)
+      - tipo_ultima       (custos / horas / None)
+      - n_total           (projetos no df)
+      - n_com_orcamento   (projetos com orçamento > 0)
+    """
+    info = {
+        "ultima_importacao": None,
+        "tipo_ultima": None,
+        "n_total": 0,
+        "n_com_orcamento": 0,
+    }
+
+    # Data da última importação (qualquer tipo)
+    try:
+        imp = listar_importacoes()
+        if not imp.empty:
+            topo = imp.iloc[0]
+            bruto = str(topo.get("importado_em", "")).strip()
+            try:
+                dt = datetime.strptime(bruto[:19], "%Y-%m-%d %H:%M:%S")
+                info["ultima_importacao"] = dt.strftime("%d/%m/%Y %H:%M")
+            except Exception:
+                info["ultima_importacao"] = bruto or None
+            info["tipo_ultima"] = str(topo.get("tipo", "")) or None
+    except Exception:
+        pass
+
+    # Completude de orçamento
+    if df_dashboard is not None and not df_dashboard.empty:
+        info["n_total"] = len(df_dashboard)
+        if "orcamento" in df_dashboard.columns:
+            info["n_com_orcamento"] = int((df_dashboard["orcamento"] > 0).sum())
+
+    return info
+
+
+def render_selo_dados(df_dashboard: pd.DataFrame) -> None:
+    """
+    Renderiza, via st.caption, um selo discreto com a data da última
+    importação e a completude de orçamento. Deve ser chamado logo
+    abaixo do título nas páginas de análise.
+    """
+    import streamlit as _st
+    info = info_atualizacao(df_dashboard)
+
+    partes = []
+    if info["ultima_importacao"]:
+        rotulo_tipo = {"custos": "custos", "horas": "horas"}.get(info["tipo_ultima"], "dados")
+        partes.append(f"🔄 Dados atualizados em **{info['ultima_importacao']}** (último envio: {rotulo_tipo})")
+    else:
+        partes.append("🔄 Nenhuma importação registrada ainda")
+
+    if info["n_total"] > 0:
+        n_ok  = info["n_com_orcamento"]
+        n_tot = info["n_total"]
+        falta = n_tot - n_ok
+        if falta > 0:
+            partes.append(f"🎯 **{n_ok} de {n_tot}** projetos com orçamento cadastrado · {falta} sem orçamento")
+        else:
+            partes.append(f"🎯 Todos os {n_tot} projetos com orçamento cadastrado")
+
+    _st.caption("  ·  ".join(partes))
 
 
 def cor_status(pct: float) -> str:
