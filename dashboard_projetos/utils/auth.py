@@ -2,15 +2,20 @@
 auth.py — Camada de autenticação simples (hardcoded).
 Gerencia sessão via st.session_state.
 
+Comportamento:
+  - Por padrão, qualquer pessoa que abrir o link entra automaticamente
+    como "visualizador" (somente leitura), sem tela de login.
+  - Um botão "Alterar usuário" na sidebar leva à tela de login clássica,
+    onde é possível entrar como administrador (ou visualizador novamente).
+
 Perfis disponíveis:
-  - "admin"      → acesso total
+  - "admin"        → acesso total
   - "visualizador" → somente leitura
 """
 import streamlit as st
 import hashlib
 
 # ── Usuários hardcoded ────────────────────────────────────────────────────────
-# Senhas armazenadas como SHA-256 para não ficarem em plaintext no código.
 def _hash(senha: str) -> str:
     return hashlib.sha256(senha.encode()).hexdigest()
 
@@ -27,12 +32,24 @@ USUARIOS = {
     },
 }
 
+PERFIL_PADRAO = {
+    "perfil":  "visualizador",
+    "nome":    "Visitante",
+    "usuario": None,
+}
+
 
 # ── API pública ───────────────────────────────────────────────────────────────
 
-def autenticado() -> bool:
-    """Retorna True se há uma sessão válida."""
-    return st.session_state.get("auth_ok", False)
+def garantir_sessao_padrao() -> None:
+    """
+    Garante que toda sessão tenha um perfil definido.
+    Se a pessoa nunca fez login, entra automaticamente como visualizador.
+    """
+    if "perfil" not in st.session_state:
+        st.session_state["perfil"]  = PERFIL_PADRAO["perfil"]
+        st.session_state["nome"]    = PERFIL_PADRAO["nome"]
+        st.session_state["usuario"] = PERFIL_PADRAO["usuario"]
 
 
 def perfil_admin() -> bool:
@@ -40,45 +57,51 @@ def perfil_admin() -> bool:
     return st.session_state.get("perfil") == "admin"
 
 
+def mostrando_login() -> bool:
+    return st.session_state.get("mostrar_login", False)
+
+
+def solicitar_login() -> None:
+    """Aciona a exibição da tela de login (botão 'Alterar usuário')."""
+    st.session_state["mostrar_login"] = True
+
+
+def cancelar_login() -> None:
+    """Fecha a tela de login sem alterar o perfil atual."""
+    st.session_state.pop("mostrar_login", None)
+
+
 def validar_login(usuario: str, senha: str) -> bool:
-    """Valida credenciais e, se corretas, grava a sessão."""
+    """Valida credenciais e, se corretas, grava a sessão e fecha o login."""
     user = USUARIOS.get(usuario.strip().lower())
     if user and user["senha_hash"] == _hash(senha):
-        st.session_state["auth_ok"]  = True
-        st.session_state["usuario"]  = usuario.strip().lower()
         st.session_state["perfil"]   = user["perfil"]
         st.session_state["nome"]     = user["nome"]
+        st.session_state["usuario"]  = usuario.strip().lower()
+        st.session_state.pop("mostrar_login", None)
         return True
     return False
 
 
-def logout() -> None:
-    """Limpa completamente a sessão e força volta ao login."""
-    for key in ["auth_ok", "usuario", "perfil", "nome"]:
-        st.session_state.pop(key, None)
-    st.rerun()
+def voltar_para_visualizador() -> None:
+    """Sai do modo administrador e retorna ao perfil padrão (visualizador)."""
+    st.session_state["perfil"]  = PERFIL_PADRAO["perfil"]
+    st.session_state["nome"]    = PERFIL_PADRAO["nome"]
+    st.session_state["usuario"] = PERFIL_PADRAO["usuario"]
+    st.session_state.pop("mostrar_login", None)
 
 
 def exibir_login() -> None:
     """
-    Renderiza a tela de login centralizada.
-    Deve ser chamada em app.py antes de st.navigation() quando não autenticado.
+    Renderiza a tela de login clássica, centralizada.
+    Inclui botão "Voltar" para fechar sem autenticar.
     """
-    # CSS da tela de login — compatível dark/light
     st.markdown("""
     <style>
-    /* Oculta sidebar e toolbar na tela de login */
     section[data-testid="stSidebar"]       { display: none !important; }
     div[data-testid="stToolbar"]            { display: none !important; }
     header[data-testid="stHeader"]          { display: none !important; }
 
-    /* Centraliza o card */
-    .login-wrapper {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        min-height: 80vh;
-    }
     .login-card {
         width: 100%;
         max-width: 420px;
@@ -108,7 +131,6 @@ def exibir_login() -> None:
     </style>
     """, unsafe_allow_html=True)
 
-    # Layout: coluna central estreita para simular card
     _, col, _ = st.columns([1, 1.6, 1])
     with col:
         st.markdown("<div class='login-logo'>📊</div>", unsafe_allow_html=True)
@@ -117,12 +139,18 @@ def exibir_login() -> None:
             "<span style='font-size:16px;font-weight:500;opacity:.75'>Dashboard de Projetos</span></div>",
             unsafe_allow_html=True,
         )
-        st.markdown("<div class='login-sub'>Faça login para continuar</div>", unsafe_allow_html=True)
+        st.markdown("<div class='login-sub'>Entre com suas credenciais de administrador</div>", unsafe_allow_html=True)
 
         with st.form("form_login", clear_on_submit=False):
             usuario = st.text_input("Usuário", placeholder="Digite seu usuário")
             senha   = st.text_input("Senha",   placeholder="Digite sua senha", type="password")
-            entrar  = st.form_submit_button("Entrar", type="primary", use_container_width=True)
+            c1, c2  = st.columns(2)
+            entrar    = c1.form_submit_button("Entrar", type="primary", use_container_width=True)
+            cancelar  = c2.form_submit_button("Voltar", use_container_width=True)
+
+        if cancelar:
+            cancelar_login()
+            st.rerun()
 
         if entrar:
             if validar_login(usuario, senha):
