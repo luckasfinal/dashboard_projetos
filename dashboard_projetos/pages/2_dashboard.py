@@ -7,7 +7,11 @@ if str(_ROOT) not in sys.path:
 import streamlit as st
 import pandas as pd
 from utils.db import init_db
-from utils.data_processor import agregar_tudo, formata_brl, formata_brl_curto, cor_status, cor_status_projeto, render_selo_dados, aviso_truncamento, detectar_excecoes
+from utils.data_processor import (
+    agregar_tudo, formata_brl, formata_brl_curto, cor_status, cor_status_projeto,
+    render_selo_dados, aviso_truncamento, detectar_excecoes,
+    status_ativos, anos_default,
+)
 from utils import charts
 
 init_db()
@@ -32,6 +36,7 @@ section[data-testid="stSidebar"] { min-width: 240px !important; max-width: 260px
 """, unsafe_allow_html=True)
 
 st.title("📊 Dashboard Financeiro")
+st.caption("Foco em **custos e orçamento**. Para prazos, status e cronograma, veja **Andamento dos Projetos**.")
 
 df_dashboard, df_custos_raw, df_horas_raw = agregar_tudo()
 
@@ -46,9 +51,9 @@ lista_meses    = sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolis
 lista_status   = sorted(df_dashboard["status_projeto"].dropna().unique().tolist()) if "status_projeto" in df_dashboard.columns else []
 
 if "filtro_projetos" not in st.session_state: st.session_state["filtro_projetos"] = lista_projetos
-if "filtro_anos"     not in st.session_state: st.session_state["filtro_anos"]     = lista_anos
+if "filtro_anos"     not in st.session_state: st.session_state["filtro_anos"]     = anos_default(lista_anos)
 if "filtro_meses"    not in st.session_state: st.session_state["filtro_meses"]    = lista_meses
-if "filtro_status"   not in st.session_state: st.session_state["filtro_status"]   = lista_status
+if "filtro_status"   not in st.session_state: st.session_state["filtro_status"]   = status_ativos(lista_status)
 
 st.session_state["filtro_projetos"] = [p for p in st.session_state["filtro_projetos"] if p in lista_projetos]
 st.session_state["filtro_anos"]     = [a for a in st.session_state["filtro_anos"]     if a in lista_anos]
@@ -154,7 +159,7 @@ l2c3.metric(
 
 st.divider()
 
-# ── Gráficos — um por linha ───────────────────────────────────────────────────
+# ── Gráficos financeiros — um por linha ───────────────────────────────────────
 n_proj_graf = len(df_f)
 if tem_orc:
     # grafico_custo_vs_orcamento usa todos os projetos — não trunca
@@ -162,9 +167,6 @@ if tem_orc:
 else:
     st.plotly_chart(charts.grafico_realizado_por_projeto(df_f), use_container_width=True)
     aviso_truncamento(n_proj_graf)
-
-st.plotly_chart(charts.grafico_horas_por_projeto(df_f), use_container_width=True)
-aviso_truncamento(n_proj_graf)
 
 st.plotly_chart(charts.grafico_custo_por_hora(df_f), use_container_width=True)
 aviso_truncamento(len(df_f[df_f["custo_por_hora"] > 0]))
@@ -180,7 +182,7 @@ st.divider()
 # ── Tabela resumo ─────────────────────────────────────────────────────────────
 st.subheader("📋 Resumo por Projeto")
 
-cols_disp = ["projeto", "nome_projeto", "status_projeto", "valor_total", "horas_total", "custo_por_hora"]
+cols_disp = ["projeto", "nome_projeto", "valor_total", "horas_total", "custo_por_hora"]
 if tem_orc:
     cols_disp += ["orcamento", "saldo_orcamento", "pct_orcamento"]
 for c in ["filial", "area", "segmento"]:
@@ -195,7 +197,6 @@ if "pct_orcamento" in tabela.columns:
 tabela.rename(columns={
     "projeto":         "CC",
     "nome_projeto":    "Projeto",
-    "status_projeto":  "Status",
     "valor_total":     "Realizado (R$)",
     "horas_total":     "Horas",
     "custo_por_hora":  "R$/h",
@@ -219,15 +220,9 @@ def _cor_pct(val):
     if v >= 70: return "background-color:#713f12;color:#fde68a"
     return "background-color:#14532d;color:#86efac"
 
-def _cor_status_col(val):
-    bg, fg = cor_status_projeto(val)
-    return f"background-color:{bg};color:{fg};font-weight:600"
-
 styler = tabela.style.format(fmt)
 if "% Orç." in tabela.columns:
     styler = styler.map(_cor_pct, subset=["% Orç."])
-if "Status" in tabela.columns:
-    styler = styler.map(_cor_status_col, subset=["Status"])
 
 st.dataframe(styler, use_container_width=True, hide_index=True)
 

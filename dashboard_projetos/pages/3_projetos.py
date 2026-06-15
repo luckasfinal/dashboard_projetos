@@ -12,6 +12,7 @@ from utils.data_processor import (
     agregar_tudo, formata_brl, formata_brl_curto, cor_status, cor_status_projeto,
     badge_status_projeto, agrupar_por_nome_projeto, render_selo_dados,
     aviso_truncamento, detectar_excecoes, render_faixa_alertas, projecao_burn_rate,
+    status_ativos, anos_default,
 )
 from utils import charts
 
@@ -77,6 +78,7 @@ section[data-testid="stSidebar"] { min-width: 240px !important; max-width: 260px
 """, unsafe_allow_html=True)
 
 st.title("📈 Andamento dos Projetos")
+st.caption("Foco em **prazos, status e entrega**. Para análise detalhada de custos, veja **Dashboard Financeiro**.")
 
 df, df_custos_raw, df_horas_raw = agregar_tudo()
 
@@ -91,9 +93,9 @@ lista_meses    = sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolis
 lista_status   = sorted(df["status_projeto"].dropna().unique().tolist()) if "status_projeto" in df.columns else []
 
 if "filtro_projetos" not in st.session_state: st.session_state["filtro_projetos"] = lista_projetos
-if "filtro_anos"     not in st.session_state: st.session_state["filtro_anos"]     = lista_anos
+if "filtro_anos"     not in st.session_state: st.session_state["filtro_anos"]     = anos_default(lista_anos)
 if "filtro_meses"    not in st.session_state: st.session_state["filtro_meses"]    = lista_meses
-if "filtro_status"   not in st.session_state: st.session_state["filtro_status"]   = lista_status
+if "filtro_status"   not in st.session_state: st.session_state["filtro_status"]   = status_ativos(lista_status)
 
 st.session_state["filtro_projetos"] = [p for p in st.session_state["filtro_projetos"] if p in lista_projetos]
 st.session_state["filtro_anos"]     = [a for a in st.session_state["filtro_anos"]     if a in lista_anos]
@@ -349,6 +351,14 @@ with tab_resumo:
         st.plotly_chart(fig_timeline, use_container_width=True, key="timeline_lancamentos")
     else:
         st.caption("ℹ️ Nenhum projeto com data de lançamento cadastrada nos filtros atuais.")
+
+    st.divider()
+
+    # ── Esforço (horas) por projeto ───────────────────────────────────────────
+    st.subheader("⏱️ Horas por Projeto")
+    st.plotly_chart(charts.grafico_horas_por_projeto(df_f),
+                    use_container_width=True, key="horas_por_projeto_resumo")
+    aviso_truncamento(len(df_f))
 
     st.divider()
 

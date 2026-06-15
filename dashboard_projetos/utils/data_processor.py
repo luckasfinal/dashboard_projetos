@@ -829,3 +829,38 @@ def projecao_burn_rate(row, df_custos_proj: pd.DataFrame) -> dict:
         base["vai_estourar"]  = base["projecao_final"] > orcamento
 
     return base
+
+
+# ─────────────────────────────────────────────
+# Defaults de filtros curados (Roadmap 4.2)
+# ─────────────────────────────────────────────
+
+# "Projeto ativo" = qualquer status exceto os terminais abaixo.
+STATUS_TERMINAIS = {"Cancelado", "Lançado"}
+
+
+def status_ativos(lista_status: list) -> list:
+    """
+    A partir da lista de status disponíveis, retorna apenas os 'ativos'
+    (exclui Cancelado e Lançado). Usado como default do filtro de status.
+    Se a exclusão esvaziar tudo, devolve a lista original (evita tela vazia).
+    """
+    ativos = [s for s in lista_status if s not in STATUS_TERMINAIS]
+    return ativos if ativos else list(lista_status)
+
+
+def ano_corrente_str() -> str:
+    """Retorna o ano atual como string (ex: '2026'), para default do filtro de ano."""
+    from datetime import datetime as _dt
+    return str(_dt.today().year)
+
+
+def anos_default(lista_anos: list) -> list:
+    """
+    Default do filtro de ano: apenas o ano corrente, se existir na lista.
+    Caso o ano corrente não esteja disponível, devolve todos (fallback seguro).
+    """
+    atual = ano_corrente_str()
+    if atual in [str(a) for a in lista_anos]:
+        return [a for a in lista_anos if str(a) == atual]
+    return list(lista_anos)
