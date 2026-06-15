@@ -370,6 +370,36 @@ def formata_brl(valor: float) -> str:
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def formata_brl_curto(valor: float) -> str:
+    """
+    Formato abreviado para cartões de KPI (Roadmap 1.3):
+      1.540.000 -> "R$ 1,54 mi"
+      356.000   -> "R$ 356,0 mil"
+      -1.190.000 -> "-R$ 1,19 mi"
+    Mantém o valor cheio acessível via tooltip nas chamadas.
+    """
+    try:
+        v = float(valor)
+    except (TypeError, ValueError):
+        return "R$ 0,00"
+
+    sinal = "-" if v < 0 else ""
+    a = abs(v)
+
+    if a >= 1_000_000_000:
+        num = f"{a/1_000_000_000:.2f} bi"
+    elif a >= 1_000_000:
+        num = f"{a/1_000_000:.2f} mi"
+    elif a >= 1_000:
+        num = f"{a/1_000:.1f} mil"
+    else:
+        # valores pequenos: mostra cheio, sem abreviar
+        return formata_brl(v)
+
+    num = num.replace(".", ",")
+    return f"{sinal}R$ {num}"
+
+
 # ─────────────────────────────────────────────
 # Selo de atualização e completude (Roadmap 1.1)
 # ─────────────────────────────────────────────
@@ -440,6 +470,22 @@ def render_selo_dados(df_dashboard: pd.DataFrame) -> None:
             partes.append(f"🎯 Todos os {n_tot} projetos com orçamento cadastrado")
 
     _st.caption("  ·  ".join(partes))
+
+
+def aviso_truncamento(n_total: int, limite: int | None = None) -> None:
+    """
+    Exibe um aviso discreto quando um gráfico mostra apenas parte dos
+    projetos (Roadmap 1.2). Deve ser chamado logo após o st.plotly_chart
+    do gráfico que aplica o corte.
+    """
+    import streamlit as _st
+    from utils.charts import LIMITE_GRAFICO
+    limite = limite or LIMITE_GRAFICO
+    if n_total > limite:
+        _st.caption(
+            f"ℹ️ Exibindo os **{limite}** principais de **{n_total}** projetos. "
+            f"Ajuste os filtros na barra lateral para ver outros."
+        )
 
 
 def cor_status(pct: float) -> str:
