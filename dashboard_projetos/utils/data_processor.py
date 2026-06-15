@@ -488,6 +488,128 @@ def aviso_truncamento(n_total: int, limite: int | None = None) -> None:
         )
 
 
+# ─────────────────────────────────────────────
+# Gestão por exceção (Roadmap 2.1 e 2.2)
+# ─────────────────────────────────────────────
+
+def detectar_excecoes(df: pd.DataFrame) -> dict:
+    """
+    Analisa o df (já filtrado) e identifica os projetos que exigem atenção.
+    Retorna um dicionário com listas de nomes de projeto por categoria, além
+    de métricas agregadas usadas no KPI de Saldo.
+
+    Categorias:
+      - estouro      : realizado > orçamento (orçamento cadastrado)
+      - atrasados    : lançamento previsto já passou e não foi realizado,
+                       OU realizado depois do previsto
+      - stand_by     : status_projeto == "Stand by"
+      - cancelados   : status_projeto == "Cancelado"
+      - sem_orcamento: projetos sem orçamento cadastrado
+
+    Métricas:
+      - n_estouro, excedente_total (R$ somado acima do orçamento)
+    """
+    from datetime import datetime as _dt
+    hoje = _dt.today().date()
+
+    resultado = {
+        "estouro": [],
+        "atrasados": [],
+        "stand_by": [],
+        "cancelados": [],
+        "sem_orcamento": [],
+        "n_estouro": 0,
+        "excedente_total": 0.0,
+    }
+    if df is None or df.empty:
+        return resultado
+
+    def _parse(val):
+        if not val or str(val) in ("0", "None", "nan", ""):
+            return None
+        try:
+            return _dt.strptime(str(val)[:10], "%Y-%m-%d").date()
+        except Exception:
+            return None
+
+    for _, row in df.iterrows():
+        nome = row.get("nome_projeto", row.get("projeto", "—"))
+        orc  = row.get("orcamento", 0) or 0
+        val  = row.get("valor_total", 0) or 0
+
+        # Estouro de orçamento
+        if orc > 0 and val > orc:
+            resultado["estouro"].append(nome)
+            resultado["n_estouro"] += 1
+            resultado["excedente_total"] += (val - orc)
+
+        # Sem orçamento cadastrado
+        if not orc or orc <= 0:
+            resultado["sem_orcamento"].append(nome)
+
+        # Atraso de lançamento
+        prev_d = _parse(row.get("prev_lancamento"))
+        real_d = _parse(row.get("real_lancamento"))
+        if prev_d:
+            ref = real_d if real_d else hoje
+            if ref > prev_d:
+                resultado["atrasados"].append(nome)
+
+        # Status
+        status = str(row.get("status_projeto", "")).strip()
+        if status == "Stand by":
+            resultado["stand_by"].append(nome)
+        elif status == "Cancelado":
+            resultado["cancelados"].append(nome)
+
+    return resultado
+
+
+def render_faixa_alertas(df: pd.DataFrame) -> None:
+    """
+    Faixa de alertas no topo do Resumo Geral (Roadmap 2.1).
+    Mostra contagens das exceções mais relevantes. Quando não há
+    exceções, exibe uma mensagem positiva discreta.
+    """
+    import streamlit as _st
+    exc = detectar_excecoes(df)
+
+    cartoes = []
+    if exc["estouro"]:
+        cartoes.append(("🚨", len(exc["estouro"]), "acima do orçamento", "#dc2626"))
+    if exc["atrasados"]:
+        cartoes.append(("⏰", len(exc["atrasados"]), "com lançamento atrasado", "#f59e0b"))
+    if exc["stand_by"]:
+        cartoes.append(("⏸️", len(exc["stand_by"]), "em Stand by", "#a78bfa"))
+    if exc["cancelados"]:
+        cartoes.append(("✖️", len(exc["cancelados"]), "cancelados", "#94a3b8"))
+
+    if not cartoes:
+        _st.success("✅ Nenhuma exceção detectada nos projetos filtrados — tudo dentro do previsto.")
+        return
+
+    # Renderiza cartões lado a lado
+    cols = _st.columns(len(cartoes))
+    for col, (icone, n, rotulo, cor) in zip(cols, cartoes):
+        col.markdown(f"""
+        <div style="border:1px solid {cor}55;background:{cor}15;border-radius:10px;
+                    padding:12px 14px;text-align:center">
+            <div style="font-size:22px;font-weight:800;color:{cor}">{icone} {n}</div>
+            <div style="font-size:12px;opacity:.8;margin-top:2px">{rotulo}</div>
+        </div>""", unsafe_allow_html=True)
+
+    # Detalhe expansível com os nomes dos projetos de cada categoria
+    with _st.expander("Ver projetos que exigem atenção"):
+        if exc["estouro"]:
+            _st.markdown("**🚨 Acima do orçamento:** " + ", ".join(exc["estouro"]))
+        if exc["atrasados"]:
+            _st.markdown("**⏰ Lançamento atrasado:** " + ", ".join(exc["atrasados"]))
+        if exc["stand_by"]:
+            _st.markdown("**⏸️ Em Stand by:** " + ", ".join(exc["stand_by"]))
+        if exc["cancelados"]:
+            _st.markdown("**✖️ Cancelados:** " + ", ".join(exc["cancelados"]))
+
+
 def cor_status(pct: float) -> str:
     if pct > 100:
         return "🚨"
