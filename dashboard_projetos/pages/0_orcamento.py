@@ -14,8 +14,9 @@ from utils.db import (
     salvar_previsao_periodo, carregar_previsoes_projeto,
     deletar_previsao_periodo, deletar_projeto_completo,
     carregar_orcamentos,
+    STATUS_OPCOES, STATUS_DEFAULT,
 )
-from utils.data_processor import agregar_tudo, formata_brl
+from utils.data_processor import agregar_tudo, formata_brl, badge_status_projeto
 from utils.auth import perfil_admin
 
 init_db()
@@ -81,10 +82,34 @@ def _tem(chave: str) -> bool:
 def _ind(chave: str) -> str:
     return "🔵 " if _tem(chave) else ""
 
+# ── Proteção contra exclusão de dados já preenchidos ──────────────────────────
+# Se o usuário deixar um campo em branco que já tinha valor salvo, o valor
+# anterior é preservado e o usuário é avisado.
+
+def _protege_texto(novo: str, antigo: str) -> tuple[str, bool]:
+    antigo_str = (antigo or "").strip()
+    novo_str   = (novo or "").strip()
+    if novo_str == "" and antigo_str not in ("", "0", "None", "nan"):
+        return antigo_str, True
+    return novo_str, False
+
+def _protege_data(novo_date, antigo_str) -> tuple[str | None, bool]:
+    novo_str      = _str_or_none(novo_date)
+    antigo_valido = antigo_str and str(antigo_str) not in ("0", "None", "nan", "")
+    if novo_str is None and antigo_valido:
+        return str(antigo_str), True
+    return novo_str, False
+
+def _protege_numero(novo: float, antigo: float) -> tuple[float, bool]:
+    if novo == 0 and antigo and antigo > 0:
+        return antigo, True
+    return novo, False
+
 orcamento_atual      = float(dados["orcamento_previsto"]) if dados and dados.get("orcamento_previsto") else 0.0
 orc_tem_dado         = bool(dados and dados.get("orcamento_previsto") and float(dados["orcamento_previsto"]) > 0)
 nome_editado_salvo   = (dados.get("nome_projeto_editado") or "") if dados else ""
 nome_original        = mapeamento_nomes.get(cc_selecionado, "")
+status_salvo         = (dados.get("status_projeto") or STATUS_DEFAULT) if dados else STATUS_DEFAULT
 
 realizado_proj = 0.0
 linha = df_dashboard[df_dashboard["projeto"] == cc_selecionado]
@@ -103,6 +128,15 @@ with st.form("form_orcamento", clear_on_submit=False):
         placeholder="Digite um nome personalizado (opcional)",
         disabled=not _admin,
         help="Se preenchido, substituirá o nome importado da planilha em todo o dashboard.",
+    )
+
+    status_index = STATUS_OPCOES.index(status_salvo) if status_salvo in STATUS_OPCOES else 0
+    v_status = st.selectbox(
+        "📌 Status do Projeto:",
+        options=STATUS_OPCOES,
+        index=status_index,
+        disabled=not _admin,
+        help="Etapa atual do projeto no fluxo de aprovação/lançamento.",
     )
 
     st.divider()
@@ -190,23 +224,65 @@ with st.form("form_orcamento", clear_on_submit=False):
 # ── 5. Salvamento ─────────────────────────────────────────────────────────────
 if botao_salvar and _admin:
     try:
-        nome_para_salvar = v_nome.strip() if v_nome.strip() != nome_original.strip() else None
+        campos_protegidos = []
+
+        # Nome do projeto: não permite limpar um nome editado já salvo
+        v_nome_strip = v_nome.strip()
+        if v_nome_strip == "" and nome_editado_salvo.strip() != "":
+            nome_para_salvar = nome_editado_salvo
+            campos_protegidos.append("Nome do Projeto")
+        elif v_nome_strip == nome_original.strip():
+            nome_para_salvar = None
+        else:
+            nome_para_salvar = v_nome_strip
+
+        # Orçamento previsto: não permite zerar um valor já preenchido
+        v_orcamento_final, prot = _protege_numero(v_orcamento, orcamento_atual)
+        if prot: campos_protegidos.append("Orçamento previsto")
+
+        # Datas do cronograma: não permite apagar datas já salvas
+        data_inicio_f,      p1 = _protege_data(d_inicio,      dados.get("data_inicio")           if dados else None)
+        prev_viab_f,        p2 = _protege_data(p_viabilidade, dados.get("prev_viabilidade")      if dados else None)
+        real_viab_f,        p3 = _protege_data(r_viabilidade, dados.get("real_viabilidade")      if dados else None)
+        prev_qual_f,        p4 = _protege_data(p_qualidade,   dados.get("prev_qualidade")        if dados else None)
+        real_qual_f,        p5 = _protege_data(r_qualidade,   dados.get("real_qualidade")        if dados else None)
+        prev_aprov_f,       p6 = _protege_data(p_aprov_lanc,  dados.get("prev_aprov_lancamento") if dados else None)
+        real_aprov_f,       p7 = _protege_data(r_aprov_lanc,  dados.get("real_aprov_lancamento") if dados else None)
+        prev_lanc_f,        p8 = _protege_data(p_lancamento,  dados.get("prev_lancamento")        if dados else None)
+        real_lanc_f,        p9 = _protege_data(r_lancamento,  dados.get("real_lancamento")        if dados else None)
+
+        nomes_marcos = {
+            "p1": "Início do Projeto", "p2": "Prev. Viabilidade", "p3": "Real. Viabilidade",
+            "p4": "Prev. Qualidade",   "p5": "Real. Qualidade",
+            "p6": "Prev. Aprov. Lançamento", "p7": "Real. Aprov. Lançamento",
+            "p8": "Prev. Lançamento", "p9": "Real. Lançamento",
+        }
+        for var_nome, protegido in [("p1",p1),("p2",p2),("p3",p3),("p4",p4),("p5",p5),("p6",p6),("p7",p7),("p8",p8),("p9",p9)]:
+            if protegido:
+                campos_protegidos.append(nomes_marcos[var_nome])
+
         salvar_orcamento(
             projeto               = cc_selecionado,
-            orcamento_previsto    = v_orcamento,
-            data_inicio           = _str_or_none(d_inicio),
-            prev_viabilidade      = _str_or_none(p_viabilidade),
-            prev_qualidade        = _str_or_none(p_qualidade),
-            prev_aprov_lancamento = _str_or_none(p_aprov_lanc),
-            prev_lancamento       = _str_or_none(p_lancamento),
-            real_viabilidade      = _str_or_none(r_viabilidade),
-            real_qualidade        = _str_or_none(r_qualidade),
-            real_aprov_lancamento = _str_or_none(r_aprov_lanc),
-            real_lancamento       = _str_or_none(r_lancamento),
+            orcamento_previsto    = v_orcamento_final,
+            status_projeto        = v_status,
+            data_inicio           = data_inicio_f,
+            prev_viabilidade      = prev_viab_f,
+            prev_qualidade        = prev_qual_f,
+            prev_aprov_lancamento = prev_aprov_f,
+            prev_lancamento       = prev_lanc_f,
+            real_viabilidade      = real_viab_f,
+            real_qualidade        = real_qual_f,
+            real_aprov_lancamento = real_aprov_f,
+            real_lancamento       = real_lanc_f,
             nome_projeto_editado  = nome_para_salvar,
         )
         agregar_tudo.clear()
         st.success(f"✅ Dados do projeto **{cc_selecionado}** gravados com sucesso!")
+        if campos_protegidos:
+            st.warning(
+                "⚠️ Os seguintes campos já possuíam dados e não podem ser deixados em branco — "
+                "os valores anteriores foram mantidos: " + ", ".join(campos_protegidos)
+            )
         st.toast("Banco de dados atualizado!", icon="💾")
         st.rerun()
     except Exception as e:
@@ -222,6 +298,12 @@ if dados_atuais:
     orc_prev = float(dados_atuais.get("orcamento_previsto") or 0)
     saldo    = orc_prev - realizado_proj
     pct      = (realizado_proj / orc_prev * 100) if orc_prev > 0 else 0
+
+    status_atual = dados_atuais.get("status_projeto") or STATUS_DEFAULT
+    st.markdown(
+        f"<div style='margin-bottom:10px'>Status atual: {badge_status_projeto(status_atual)}</div>",
+        unsafe_allow_html=True,
+    )
 
     col_a, col_b, col_c = st.columns(3)
     col_a.metric("Orçamento Previsto", formata_brl(orc_prev))
@@ -364,9 +446,19 @@ with col_imp:
                     for _, row in df_imp_orc.iterrows():
                         proj = str(row.get("projeto","")).strip()
                         if not proj: continue
+
+                        # Status do Projeto: se a planilha importada não trouxer
+                        # esta coluna (ou vier vazia), preserva o status já salvo
+                        # no banco em vez de sobrescrever com vazio/Nulo.
+                        status_imp = str(row.get("status_projeto","")).strip()
+                        if not status_imp or status_imp not in STATUS_OPCOES:
+                            existente = carregar_orcamento_projeto(proj)
+                            status_imp = (existente.get("status_projeto") if existente else None) or STATUS_DEFAULT
+
                         salvar_orcamento(
                             projeto               = proj,
                             orcamento_previsto    = float(row.get("orcamento_previsto") or 0),
+                            status_projeto        = status_imp,
                             data_inicio           = str(row.get("data_inicio","")) or None,
                             prev_viabilidade      = str(row.get("prev_viabilidade","")) or None,
                             prev_qualidade        = str(row.get("prev_qualidade","")) or None,
