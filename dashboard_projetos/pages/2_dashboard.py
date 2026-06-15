@@ -7,7 +7,7 @@ if str(_ROOT) not in sys.path:
 import streamlit as st
 import pandas as pd
 from utils.db import init_db
-from utils.data_processor import agregar_tudo, formata_brl, cor_status, cor_status_projeto, render_selo_dados
+from utils.data_processor import agregar_tudo, formata_brl, formata_brl_curto, cor_status, cor_status_projeto, render_selo_dados, aviso_truncamento
 from utils import charts
 
 init_db()
@@ -108,34 +108,51 @@ total_orc     = df_f["orcamento"].sum() if tem_orc else 0
 saldo_total   = total_orc - total_custo  if tem_orc else None
 pct_consumido = (total_custo / total_orc * 100) if tem_orc and total_orc > 0 else None
 
-# Linha 1
+# Linha 1 — valores abreviados; valor cheio no tooltip (help)
 l1c1, l1c2, l1c3 = st.columns(3)
-l1c1.metric("🎯 Orçamento Total",    formata_brl(total_orc) if tem_orc else "Não cadastrado")
-l1c2.metric("💰 Realizado Total",    formata_brl(total_custo))
+l1c1.metric(
+    "🎯 Orçamento Total",
+    formata_brl_curto(total_orc) if tem_orc else "Não cadastrado",
+    help=f"Valor exato: {formata_brl(total_orc)}" if tem_orc else None,
+)
+l1c2.metric(
+    "💰 Realizado Total",
+    formata_brl_curto(total_custo),
+    help=f"Valor exato: {formata_brl(total_custo)}",
+)
 l1c3.metric(
     "💹 Saldo Consolidado",
-    formata_brl(saldo_total) if saldo_total is not None else "N/D",
+    formata_brl_curto(saldo_total) if saldo_total is not None else "N/D",
     delta=f"{pct_consumido:.1f}% consumido" if pct_consumido else None,
     delta_color="inverse",
+    help=f"Valor exato: {formata_brl(saldo_total)}" if saldo_total is not None else None,
 )
 
 # Linha 2
 l2c1, l2c2, l2c3 = st.columns(3)
 l2c1.metric("📁 Projetos Ativos",   str(n_projetos))
 l2c2.metric("⏱️ Horas Totais",      f"{total_horas:,.0f} h")
-l2c3.metric("📐 Custo Médio/Hora",  formata_brl(custo_h_medio))
+l2c3.metric(
+    "📐 Custo Médio/Hora",
+    formata_brl(custo_h_medio),  # valores por hora são pequenos — mantém cheio
+)
 
 st.divider()
 
 # ── Gráficos — um por linha ───────────────────────────────────────────────────
+n_proj_graf = len(df_f)
 if tem_orc:
+    # grafico_custo_vs_orcamento usa todos os projetos — não trunca
     st.plotly_chart(charts.grafico_custo_vs_orcamento(df_f), use_container_width=True)
 else:
     st.plotly_chart(charts.grafico_realizado_por_projeto(df_f), use_container_width=True)
+    aviso_truncamento(n_proj_graf)
 
 st.plotly_chart(charts.grafico_horas_por_projeto(df_f), use_container_width=True)
+aviso_truncamento(n_proj_graf)
 
 st.plotly_chart(charts.grafico_custo_por_hora(df_f), use_container_width=True)
+aviso_truncamento(len(df_f[df_f["custo_por_hora"] > 0]))
 
 if not df_c_f.empty and "conta" in df_c_f.columns:
     st.plotly_chart(charts.grafico_pizza_conta(df_c_f), use_container_width=True)
