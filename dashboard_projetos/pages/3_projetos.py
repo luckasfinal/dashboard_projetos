@@ -67,6 +67,7 @@ section[data-testid="stSidebar"] { min-width: 240px !important; max-width: 260px
     border-bottom:1px solid rgba(128,128,128,.1);
 }
 .consumo-nome { flex:2.2; font-size:13px; font-weight:600; }
+.consumo-status { flex:1.8; text-align:left; }
 .consumo-bar-wrap { flex:3; background:rgba(128,128,128,.18); border-radius:6px; height:10px; overflow:hidden; }
 .consumo-bar { height:100%; border-radius:6px; }
 .consumo-pct { flex:0.8; text-align:right; font-size:13px; font-weight:700; white-space:nowrap; }
@@ -274,15 +275,28 @@ with tab_resumo:
         if df_consumo.empty:
             st.caption("Nenhum projeto com orçamento cadastrado nos filtros atuais.")
         else:
+            # Cabeçalho das colunas
+            st.markdown("""
+            <div class='consumo-row' style='border-bottom:2px solid rgba(128,128,128,.3);
+                 font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;opacity:.6'>
+                <div class='consumo-nome'>Projeto</div>
+                <div class='consumo-status'>Status</div>
+                <div class='consumo-bar-wrap' style='background:transparent'>Consumo</div>
+                <div class='consumo-pct'>%</div>
+                <div class='consumo-val'>Realizado / Orçado</div>
+            </div>""", unsafe_allow_html=True)
             for _, row in df_consumo.iterrows():
                 pct = row["pct_orcamento"]
                 cor = "#dc2626" if pct > 100 else ("#f59e0b" if pct >= 80 else "#22c55e")
                 nome_proj = row.get("nome_projeto", row["projeto"])
+                status_proj = row.get("status_projeto", "")
+                badge = badge_status_projeto(status_proj) if status_proj else ""
                 largura = min(pct, 100)
                 alerta = " 🚨" if pct > 100 else ""
                 st.markdown(f"""
                 <div class='consumo-row'>
                     <div class='consumo-nome'>{nome_proj}</div>
+                    <div class='consumo-status'>{badge}</div>
                     <div class='consumo-bar-wrap'>
                         <div class='consumo-bar' style='width:{largura:.1f}%;background:{cor}'></div>
                     </div>
