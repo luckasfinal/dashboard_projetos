@@ -10,7 +10,7 @@ import pandas as pd
 from utils.db import init_db
 from utils.data_processor import (
     agregar_tudo, formata_brl, cor_status, cor_status_projeto,
-    badge_status_projeto, agrupar_por_nome_projeto,
+    badge_status_projeto, agrupar_por_nome_projeto, render_selo_dados,
 )
 from utils import charts
 
@@ -135,6 +135,9 @@ if df_f.empty:
 
 tem_orc = (df_f.get("orcamento", pd.Series([0])) > 0).any()
 hoje    = datetime.today().date()
+
+# ── Selo de confiança: atualização + completude (recorte filtrado) ────────────
+render_selo_dados(df_f)
 
 # ── Helpers de data ───────────────────────────────────────────────────────────
 def _parse(val):
