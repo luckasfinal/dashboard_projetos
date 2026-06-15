@@ -1,0 +1,22 @@
+# Este dashboard contém dados internos e não deve ser indexado.
+User-agent: *
+Disallow: /
+
+# Bloqueio explícito a crawlers de IA conhecidos
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
