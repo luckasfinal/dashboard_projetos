@@ -4,6 +4,10 @@ import pandas as pd
 
 CORES = px.colors.qualitative.Set2
 
+# Máximo de projetos exibidos nos gráficos de barras (evita poluição visual).
+# Usado tanto no corte quanto no aviso de truncamento (Roadmap 1.2).
+LIMITE_GRAFICO = 20
+
 # LAYOUT_BASE sem margin e legend — cada função define os seus própria
 # para evitar conflito de kwargs duplicados no update_layout
 LAYOUT_BASE = dict(
@@ -18,7 +22,7 @@ _MARGIN   = dict(l=20, r=20, t=44, b=20)
 
 def grafico_realizado_por_projeto(df: pd.DataFrame) -> go.Figure:
     eixo = "nome_projeto" if "nome_projeto" in df.columns else "projeto"
-    df_plot = df.sort_values("valor_total", ascending=False).head(20)
+    df_plot = df.sort_values("valor_total", ascending=False).head(LIMITE_GRAFICO)
     fig = go.Figure(go.Bar(
         x=df_plot[eixo], y=df_plot["valor_total"],
         marker_color="#4C78A8", marker_line_width=0,
@@ -86,7 +90,7 @@ def grafico_custo_vs_orcamento(df: pd.DataFrame) -> go.Figure:
 
 def grafico_horas_por_projeto(df: pd.DataFrame) -> go.Figure:
     eixo = "nome_projeto" if "nome_projeto" in df.columns else "projeto"
-    df_plot = df.sort_values("horas_total", ascending=True).tail(20)
+    df_plot = df.sort_values("horas_total", ascending=True).tail(LIMITE_GRAFICO)
     fig = px.bar(
         df_plot, x="horas_total", y=eixo, orientation="h",
         color="horas_total",
@@ -109,7 +113,7 @@ def grafico_horas_por_projeto(df: pd.DataFrame) -> go.Figure:
 
 def grafico_custo_por_hora(df: pd.DataFrame) -> go.Figure:
     eixo = "nome_projeto" if "nome_projeto" in df.columns else "projeto"
-    df_plot = df[df["custo_por_hora"] > 0].sort_values("custo_por_hora", ascending=False).head(20)
+    df_plot = df[df["custo_por_hora"] > 0].sort_values("custo_por_hora", ascending=False).head(LIMITE_GRAFICO)
     fig = px.bar(
         df_plot, x=eixo, y="custo_por_hora",
         color="custo_por_hora",
