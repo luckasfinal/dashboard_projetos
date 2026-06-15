@@ -11,7 +11,7 @@ from utils.db import init_db
 from utils.data_processor import (
     agregar_tudo, formata_brl, formata_brl_curto, cor_status, cor_status_projeto,
     badge_status_projeto, agrupar_por_nome_projeto, render_selo_dados,
-    aviso_truncamento, detectar_excecoes, render_faixa_alertas,
+    aviso_truncamento, detectar_excecoes, render_faixa_alertas, projecao_burn_rate,
 )
 from utils import charts
 
@@ -338,6 +338,20 @@ with tab_resumo:
 
     st.divider()
 
+    # ── 3.1 — Timeline de Lançamentos do Portfólio ────────────────────────────
+    st.subheader("🗓️ Timeline de Lançamentos")
+    fig_timeline = charts.grafico_timeline_lancamentos(df_f)
+    if fig_timeline.data:
+        st.caption(
+            "◆ previsto · ★ realizado · linha vermelha = hoje. "
+            "O traço pontilhado liga previsto a realizado (verde = no prazo, vermelho = atraso)."
+        )
+        st.plotly_chart(fig_timeline, use_container_width=True, key="timeline_lancamentos")
+    else:
+        st.caption("ℹ️ Nenhum projeto com data de lançamento cadastrada nos filtros atuais.")
+
+    st.divider()
+
     # Tabela de status
     st.subheader("Status Rápido")
 
@@ -481,6 +495,7 @@ with tab_detalhe:
             st.divider()
 
     # ── Gráfico: Evolução Mensal de Desembolsos (área + colunas combinado) ───
+    df_c_proj = pd.DataFrame()
     if not df_custos_raw.empty and "centro_de_custo" in df_custos_raw.columns:
         df_c_proj = df_custos_raw[df_custos_raw["centro_de_custo"].isin(ccs_grupo)]
         if not df_c_proj.empty and "mes_ref" in df_c_proj.columns:
@@ -491,4 +506,69 @@ with tab_detalhe:
                 ),
                 use_container_width=True,
                 key=f"evolucao_mensal_{cc}",
+            )
+
+    # ── 3.2 — Projeção de custo na conclusão (burn rate) ──────────────────────
+    proj = projecao_burn_rate(row, df_c_proj)
+    if proj["status"] != "sem_dados":
+        st.divider()
+        st.markdown("#### 🔮 Projeção de Custo na Conclusão")
+
+        if proj["status"] == "concluido":
+            st.info(
+                f"✅ Projeto já lançado. Custo final realizado: "
+                f"**{formata_brl(proj['realizado'])}**."
+            )
+        else:
+            pj1, pj2, pj3 = st.columns(3)
+            pj1.metric(
+                "📊 Ritmo médio mensal",
+                formata_brl_curto(proj["ritmo_mensal"]),
+                help=(
+                    f"Média de gasto por mês: {formata_brl(proj['ritmo_mensal'])}\n\n"
+                    f"Calculada sobre {proj['meses_decorridos']} mês(es) com lançamento."
+                ),
+            )
+            pj2.metric(
+                "⏳ Meses até lançamento",
+                str(proj["meses_restantes"]),
+                help="Meses entre o mês atual e o lançamento previsto.",
+            )
+            pj3.metric(
+                "🔮 Custo projetado",
+                formata_brl_curto(proj["projecao_final"]),
+                delta=(f"{proj['pct_projetado']:.1f}% do orçamento"
+                       if proj["pct_projetado"] is not None else None),
+                delta_color="inverse",
+                help=(
+                    f"Projeção = realizado + (ritmo médio × meses restantes)\n\n"
+                    f"{formata_brl(proj['realizado'])} + "
+                    f"({formata_brl(proj['ritmo_mensal'])} × {proj['meses_restantes']}) = "
+                    f"{formata_brl(proj['projecao_final'])}"
+                ),
+            )
+
+            if proj["orcamento"] > 0:
+                if proj["vai_estourar"]:
+                    excedente = proj["projecao_final"] - proj["orcamento"]
+                    st.error(
+                        f"🚨 No ritmo atual, o projeto deve **estourar o orçamento** em "
+                        f"{formata_brl(excedente)} "
+                        f"({proj['pct_projetado']:.0f}% do previsto na conclusão)."
+                    )
+                else:
+                    folga = proj["orcamento"] - proj["projecao_final"]
+                    st.success(
+                        f"✅ No ritmo atual, o projeto deve **fechar dentro do orçamento**, "
+                        f"com folga estimada de {formata_brl(folga)} "
+                        f"({proj['pct_projetado']:.0f}% do previsto)."
+                    )
+            else:
+                st.caption(
+                    "ℹ️ Sem orçamento cadastrado — não é possível comparar a projeção. "
+                    "Cadastre o orçamento na página **Orçamentos**."
+                )
+            st.caption(
+                "Projeção baseada no ritmo médio mensal de gasto. "
+                "Assume continuidade do ritmo até o lançamento previsto."
             )

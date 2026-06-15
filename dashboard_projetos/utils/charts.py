@@ -1,6 +1,7 @@
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
+from datetime import datetime, date
 
 CORES = px.colors.qualitative.Set2
 
@@ -366,5 +367,109 @@ def grafico_evolucao_mensal_projeto(df_custos_proj: pd.DataFrame,
                     overlaying="y", side="right", showgrid=False),
         hovermode="x unified",
         showlegend=True,
+    )
+    return fig
+
+
+def grafico_timeline_lancamentos(df: pd.DataFrame) -> go.Figure:
+    """
+    Timeline (Gantt enxuto) dos lançamentos do portfólio — Roadmap 3.1.
+
+    Para cada projeto com data de lançamento (prevista e/ou realizada),
+    desenha marcadores na linha do tempo:
+      - losango cinza  = lançamento previsto
+      - estrela verde  = lançamento realizado
+    Um traço pontilhado liga previsto→realizado quando ambos existem.
+    Linha vertical vermelha marca a data de HOJE.
+
+    Cada projeto ocupa uma linha (eixo Y). Ordena pelo previsto mais próximo.
+    """
+    def _parse(val):
+        if not val or str(val) in ("0", "None", "nan", ""):
+            return None
+        try:
+            return datetime.strptime(str(val)[:10], "%Y-%m-%d").date()
+        except Exception:
+            return None
+
+    eixo_nome = "nome_projeto" if "nome_projeto" in df.columns else "projeto"
+
+    linhas = []
+    for _, row in df.iterrows():
+        prev_d = _parse(row.get("prev_lancamento"))
+        real_d = _parse(row.get("real_lancamento"))
+        if prev_d is None and real_d is None:
+            continue
+        linhas.append({
+            "nome": str(row.get(eixo_nome, row.get("projeto", "—"))),
+            "prev": prev_d,
+            "real": real_d,
+            "ord": prev_d or real_d,
+        })
+
+    if not linhas:
+        return go.Figure()
+
+    # Ordena: lançamentos mais próximos no topo (eixo Y invertido depois)
+    linhas.sort(key=lambda x: x["ord"], reverse=True)
+    nomes = [l["nome"] for l in linhas]
+
+    hoje = date.today()
+    fig = go.Figure()
+
+    # Traço ligando previsto → realizado
+    for l in linhas:
+        if l["prev"] and l["real"]:
+            atrasado = l["real"] > l["prev"]
+            cor_linha = "rgba(220,38,38,.5)" if atrasado else "rgba(34,197,94,.5)"
+            fig.add_trace(go.Scatter(
+                x=[l["prev"], l["real"]], y=[l["nome"], l["nome"]],
+                mode="lines",
+                line=dict(color=cor_linha, width=2, dash="dot"),
+                showlegend=False, hoverinfo="skip",
+            ))
+
+    # Marcadores previstos
+    prev_x = [l["prev"] for l in linhas if l["prev"]]
+    prev_y = [l["nome"] for l in linhas if l["prev"]]
+    if prev_x:
+        fig.add_trace(go.Scatter(
+            x=prev_x, y=prev_y, mode="markers", name="Previsto",
+            marker=dict(symbol="diamond", size=12, color="#94a3b8",
+                        line=dict(width=1, color="#64748b")),
+            hovertemplate="<b>%{y}</b><br>Previsto: %{x|%d/%m/%Y}<extra></extra>",
+        ))
+
+    # Marcadores realizados
+    real_x = [l["real"] for l in linhas if l["real"]]
+    real_y = [l["nome"] for l in linhas if l["real"]]
+    if real_x:
+        fig.add_trace(go.Scatter(
+            x=real_x, y=real_y, mode="markers", name="Realizado",
+            marker=dict(symbol="star", size=14, color="#22c55e",
+                        line=dict(width=1, color="#16a34a")),
+            hovertemplate="<b>%{y}</b><br>Realizado: %{x|%d/%m/%Y}<extra></extra>",
+        ))
+
+    # Linha vertical do "hoje"
+    fig.add_vline(
+        x=hoje, line_width=2, line_dash="solid", line_color="rgba(220,38,38,.7)",
+    )
+    fig.add_annotation(
+        x=hoje, y=1.02, yref="paper", showarrow=False,
+        text="hoje", font=dict(size=11, color="#dc2626"),
+    )
+
+    altura = max(260, 42 * len(nomes) + 90)
+    fig.update_layout(
+        **LAYOUT_BASE,
+        title="<b>Timeline de Lançamentos do Portfólio</b>",
+        legend=_LEGEND_H,
+        margin=dict(l=20, r=20, t=60, b=20),
+        height=altura,
+        xaxis=dict(title=None, gridcolor="rgba(128,128,128,.15)", type="date"),
+        yaxis=dict(title=None, categoryorder="array", categoryarray=nomes,
+                   gridcolor="rgba(128,128,128,.08)"),
+        hovermode="closest",
     )
     return fig

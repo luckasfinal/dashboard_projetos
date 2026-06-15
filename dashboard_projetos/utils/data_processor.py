@@ -732,3 +732,100 @@ def agrupar_por_nome_projeto(df: pd.DataFrame) -> pd.DataFrame:
     grupos["saldo_orcamento"] = grupos["orcamento"] - grupos["valor_total"]
 
     return grupos
+
+
+# ─────────────────────────────────────────────
+# Projeção de custo na conclusão — burn rate (Roadmap 3.2)
+# ─────────────────────────────────────────────
+
+def projecao_burn_rate(row, df_custos_proj: pd.DataFrame) -> dict:
+    """
+    Estima o custo final de um projeto pelo RITMO MÉDIO MENSAL de gasto.
+
+    Método (ritmo médio mensal):
+      ritmo = total_realizado / nº de meses com lançamento de custo
+      meses_restantes = meses entre o mês atual e o mês de lançamento previsto
+      projecao_final = total_realizado + (ritmo * meses_restantes)
+
+    Retorna dict com:
+      - realizado          : custo já gasto
+      - ritmo_mensal       : média mensal de gasto
+      - meses_decorridos   : nº de meses com gasto
+      - meses_restantes    : meses até o lançamento previsto (0 se já passou/sem data)
+      - projecao_final     : custo estimado na conclusão
+      - orcamento          : orçamento previsto (0 se não houver)
+      - pct_projetado      : projecao_final / orcamento * 100 (None se sem orçamento)
+      - vai_estourar       : True se projecao_final > orcamento
+      - status             : 'sem_dados' | 'concluido' | 'projetado'
+    """
+    from datetime import datetime as _dt
+
+    realizado = float(row.get("valor_total", 0) or 0)
+    orcamento = float(row.get("orcamento", 0) or 0)
+
+    base = {
+        "realizado": realizado,
+        "ritmo_mensal": 0.0,
+        "meses_decorridos": 0,
+        "meses_restantes": 0,
+        "projecao_final": realizado,
+        "orcamento": orcamento,
+        "pct_projetado": (realizado / orcamento * 100) if orcamento > 0 else None,
+        "vai_estourar": (realizado > orcamento) if orcamento > 0 else False,
+        "status": "sem_dados",
+    }
+
+    if df_custos_proj is None or df_custos_proj.empty or "mes_ref" not in df_custos_proj.columns:
+        return base
+
+    val_col = "realizado" if "realizado" in df_custos_proj.columns else "valor"
+    if val_col not in df_custos_proj.columns:
+        return base
+
+    # Meses distintos com gasto
+    gasto_mes = (df_custos_proj.groupby("mes_ref")[val_col].sum()
+                 .reset_index().sort_values("mes_ref"))
+    gasto_mes = gasto_mes[gasto_mes[val_col] != 0]
+    n_meses = len(gasto_mes)
+    if n_meses == 0:
+        return base
+
+    ritmo = realizado / n_meses
+    base["ritmo_mensal"] = ritmo
+    base["meses_decorridos"] = n_meses
+
+    # Meses restantes até o lançamento previsto
+    def _parse(val):
+        if not val or str(val) in ("0", "None", "nan", ""):
+            return None
+        try:
+            return _dt.strptime(str(val)[:10], "%Y-%m-%d").date()
+        except Exception:
+            return None
+
+    prev_lanc = _parse(row.get("prev_lancamento"))
+    real_lanc = _parse(row.get("real_lancamento"))
+    hoje = _dt.today().date()
+
+    # Projeto já lançado → custo final é o próprio realizado
+    if real_lanc is not None:
+        base["projecao_final"] = realizado
+        base["status"] = "concluido"
+        base["pct_projetado"] = (realizado / orcamento * 100) if orcamento > 0 else None
+        base["vai_estourar"] = (realizado > orcamento) if orcamento > 0 else False
+        return base
+
+    meses_restantes = 0
+    if prev_lanc is not None and prev_lanc > hoje:
+        meses_restantes = (prev_lanc.year - hoje.year) * 12 + (prev_lanc.month - hoje.month)
+        meses_restantes = max(meses_restantes, 0)
+
+    base["meses_restantes"] = meses_restantes
+    base["projecao_final"]  = realizado + ritmo * meses_restantes
+    base["status"] = "projetado"
+
+    if orcamento > 0:
+        base["pct_projetado"] = base["projecao_final"] / orcamento * 100
+        base["vai_estourar"]  = base["projecao_final"] > orcamento
+
+    return base
