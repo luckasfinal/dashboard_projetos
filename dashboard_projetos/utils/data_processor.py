@@ -43,7 +43,8 @@ import unicodedata
 import pandas as pd
 import streamlit as st
 
-from utils.db import carregar_custos, carregar_horas, carregar_orcamentos
+from utils.db import carregar_custos, carregar_horas, carregar_orcamentos, STATUS_OPCOES, STATUS_DEFAULT
+import re
 
 # ─────────────────────────────────────────────
 # Mapeamento: cabeçalho original → nome interno
@@ -288,7 +289,7 @@ def agregar_tudo() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
     # ── Merge com orçamentos/cronograma ───────────────────────────────────────
     COLUNAS_ORC = [
-        "projeto", "nome_projeto_editado", "orcamento_previsto",
+        "projeto", "nome_projeto_editado", "orcamento_previsto", "status_projeto",
         "data_inicio",
         "prev_viabilidade", "prev_qualidade", "prev_aprov_lancamento", "prev_lancamento",
         "real_viabilidade", "real_qualidade", "real_aprov_lancamento", "real_lancamento",
@@ -301,8 +302,17 @@ def agregar_tudo() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     else:
         merged["orcamento_previsto"] = 0.0
         merged["nome_projeto_editado"] = None
-        for col in COLUNAS_ORC[3:]:  # colunas de data
+        merged["status_projeto"] = None
+        for col in COLUNAS_ORC[4:]:  # colunas de data
             merged[col] = None
+
+    # Status do projeto: preenche com o valor padrão quando ausente/vazio
+    if "status_projeto" in merged.columns:
+        merged["status_projeto"] = merged["status_projeto"].apply(
+            lambda v: v if v and str(v).strip() not in ("0", "None", "nan", "") else STATUS_DEFAULT
+        )
+    else:
+        merged["status_projeto"] = STATUS_DEFAULT
 
     # Compatibilidade: mantém 'orcamento' apontando para orcamento_previsto
     merged["orcamento"] = merged["orcamento_previsto"]
@@ -363,3 +373,119 @@ def cor_status(pct: float) -> str:
     if pct >= 90:
         return "🟡"
     return "🟢"
+
+
+# ─────────────────────────────────────────────
+# Status do Projeto — cores para badges
+# ─────────────────────────────────────────────
+
+CORES_STATUS_PROJETO = {
+    "CC criado":                          ("rgba(148,163,184,.2)", "#cbd5e1"),
+    "Viabilizado":                        ("rgba(56,189,248,.2)",  "#7dd3fc"),
+    "Aprovado em Critérios de Qualidade": ("rgba(99,102,241,.2)",  "#a5b4fc"),
+    "Aprovado para Lançamento":           ("rgba(168,85,247,.2)",  "#d8b4fe"),
+    "Lançado":                            ("rgba(34,197,94,.2)",   "#86efac"),
+    "Stand by":                           ("rgba(234,179,8,.2)",   "#fde047"),
+    "Cancelado":                          ("rgba(220,38,38,.2)",   "#fca5a5"),
+}
+
+
+def cor_status_projeto(status: str) -> tuple[str, str]:
+    """Retorna (cor_fundo, cor_texto) para o badge de status do projeto."""
+    return CORES_STATUS_PROJETO.get(status, CORES_STATUS_PROJETO[STATUS_DEFAULT])
+
+
+def badge_status_projeto(status: str) -> str:
+    """HTML de um badge colorido para o status do projeto."""
+    bg, fg = cor_status_projeto(status)
+    return (
+        f"<span style='background:{bg};color:{fg};font-size:12px;font-weight:700;"
+        f"border-radius:20px;padding:3px 12px;white-space:nowrap'>{status}</span>"
+    )
+
+
+# ─────────────────────────────────────────────
+# Agrupamento por Nome do Projeto (ignora CC)
+# ─────────────────────────────────────────────
+
+_RE_CC_PREFIXO = re.compile(r"^\d{9}\s+(.*)$")
+
+
+def limpar_nome_projeto(nome) -> str:
+    """
+    Remove o prefixo de 9 dígitos (Centro de Custo) + espaço do início
+    do nome do projeto, se presente.
+    Ex: "100150268 Nome do Projeto" -> "Nome do Projeto"
+    """
+    nome = str(nome).strip()
+    m = _RE_CC_PREFIXO.match(nome)
+    if m:
+        return m.group(1).strip()
+    return nome
+
+
+def agrupar_por_nome_projeto(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Agrupa as linhas de df (já agregadas por CC) pelo nome do projeto
+    "limpo" (sem o prefixo de 9 dígitos do CC). Projetos diferentes que
+    compartilham o mesmo nome após a limpeza são consolidados em uma
+    única linha, somando métricas numéricas e combinando os CCs.
+
+    Usado na aba Detalhamento de "Andamento dos Projetos".
+    """
+    if df.empty:
+        return df.copy()
+
+    df = df.copy()
+    df["_nome_limpo"] = df["nome_projeto"].apply(limpar_nome_projeto)
+
+    colunas_soma = [
+        "valor_total", "horas_total", "orcamento", "orcamento_previsto",
+        "n_colaboradores",
+    ]
+    colunas_soma = [c for c in colunas_soma if c in df.columns]
+
+    def _primeiro_valido(serie: pd.Series):
+        for v in serie:
+            if v is not None and str(v).strip() not in ("", "0", "None", "nan"):
+                return v
+        return serie.iloc[0] if len(serie) else None
+
+    outras_colunas = [
+        c for c in df.columns
+        if c not in colunas_soma
+        and c not in ("_nome_limpo", "nome_projeto", "projeto",
+                       "custo_por_hora", "pct_orcamento", "saldo_orcamento")
+    ]
+
+    agg_dict = {c: "sum" for c in colunas_soma}
+    for c in outras_colunas:
+        agg_dict[c] = _primeiro_valido
+
+    grupos = df.groupby("_nome_limpo").agg(agg_dict).reset_index()
+
+    # Lista de CCs originais agrupados nesta linha
+    ccs_por_grupo = (
+        df.groupby("_nome_limpo")["projeto"]
+        .apply(lambda s: sorted(set(s.astype(str))))
+        .reset_index(name="_ccs")
+    )
+    grupos = grupos.merge(ccs_por_grupo, on="_nome_limpo")
+
+    grupos.rename(columns={"_nome_limpo": "nome_projeto"}, inplace=True)
+    grupos["projeto"] = grupos["_ccs"].apply(lambda lst: ", ".join(lst))
+
+    # Recalcula métricas derivadas após a soma
+    for col, default in [("valor_total", 0), ("horas_total", 0), ("orcamento", 0)]:
+        if col not in grupos.columns:
+            grupos[col] = default
+
+    grupos["custo_por_hora"] = grupos.apply(
+        lambda r: r["valor_total"] / r["horas_total"] if r["horas_total"] > 0 else 0, axis=1
+    )
+    grupos["pct_orcamento"] = grupos.apply(
+        lambda r: r["valor_total"] / r["orcamento"] * 100 if r["orcamento"] > 0 else 0, axis=1
+    )
+    grupos["saldo_orcamento"] = grupos["orcamento"] - grupos["valor_total"]
+
+    return grupos
