@@ -14,6 +14,7 @@ from utils.data_processor import (
     aviso_truncamento, detectar_excecoes, render_faixa_alertas, projecao_burn_rate,
     status_ativos, anos_default, rotulo_consumo,
 )
+from utils.pdf_report import gerar_relatorio_pdf
 from utils import charts
 
 init_db()
@@ -393,10 +394,31 @@ with tab_resumo:
         })
 
     st.dataframe(pd.DataFrame(rows_st), use_container_width=True, hide_index=True)
-    col_dl, _ = st.columns([1, 4])
-    col_dl.download_button("⬇️ Exportar CSV",
+
+    col_csv, col_pdf, _ = st.columns([1, 1, 3])
+    col_csv.download_button("⬇️ Exportar CSV",
         pd.DataFrame(rows_st).to_csv(index=False).encode("utf-8"),
-        "status_projetos.csv", "text/csv")
+        "status_projetos.csv", "text/csv", use_container_width=True)
+
+    # ── 5.2 — Exportar visão atual em PDF ─────────────────────────────────────
+    filtros_aplicados = {
+        "Projetos": projetos_selecionados if projetos_selecionados != lista_projetos else [],
+        "Ano": anos_selecionados,
+        "Mês": meses_selecionados if meses_selecionados != lista_meses else [],
+        "Status": status_selecionados if status_selecionados != lista_status else [],
+    }
+    filtros_aplicados = {k: v for k, v in filtros_aplicados.items() if v}
+    try:
+        pdf_bytes = gerar_relatorio_pdf(
+            df_f, "Andamento dos Projetos", filtros_aplicados, exc, incluir_status=True
+        )
+        col_pdf.download_button(
+            "📄 Exportar PDF", pdf_bytes,
+            "relatorio_andamento.pdf", "application/pdf",
+            use_container_width=True,
+        )
+    except Exception as e:
+        col_pdf.caption(f"PDF indisponível: {e}")
 
 # ───────────────────────────────────────────────────────────────────
 # TAB 2 — DETALHAMENTO (agrupado por nome do projeto, sem o CC)

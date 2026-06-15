@@ -12,6 +12,7 @@ from utils.data_processor import (
     render_selo_dados, aviso_truncamento, detectar_excecoes,
     status_ativos, anos_default,
 )
+from utils.pdf_report import gerar_relatorio_pdf
 from utils import charts
 
 init_db()
@@ -226,6 +227,27 @@ if "% Orç." in tabela.columns:
 
 st.dataframe(styler, use_container_width=True, hide_index=True)
 
-col_dl, _ = st.columns([1, 4])
+col_csv, col_pdf, _ = st.columns([1, 1, 3])
 csv = tabela.to_csv(index=False).encode("utf-8")
-col_dl.download_button("⬇️ Exportar CSV", csv, "resumo_projetos.csv", "text/csv")
+col_csv.download_button("⬇️ Exportar CSV", csv, "resumo_projetos.csv", "text/csv",
+                        use_container_width=True)
+
+# ── 5.2 — Exportar visão atual em PDF ─────────────────────────────────────────
+filtros_aplicados = {
+    "Projetos": projetos_selecionados if projetos_selecionados != lista_projetos else [],
+    "Ano": anos_selecionados,
+    "Mês": meses_selecionados if meses_selecionados != lista_meses else [],
+    "Status": status_selecionados if status_selecionados != lista_status else [],
+}
+filtros_aplicados = {k: v for k, v in filtros_aplicados.items() if v}
+try:
+    pdf_bytes = gerar_relatorio_pdf(
+        df_f, "Dashboard Financeiro", filtros_aplicados, exc, incluir_status=False
+    )
+    col_pdf.download_button(
+        "📄 Exportar PDF", pdf_bytes,
+        "relatorio_financeiro.pdf", "application/pdf",
+        use_container_width=True,
+    )
+except Exception as e:
+    col_pdf.caption(f"PDF indisponível: {e}")
