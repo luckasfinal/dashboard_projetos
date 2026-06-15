@@ -7,7 +7,7 @@ if str(_ROOT) not in sys.path:
 import streamlit as st
 import pandas as pd
 from utils.db import init_db
-from utils.data_processor import agregar_tudo, formata_brl, cor_status, cor_status_projeto
+from utils.data_processor import agregar_tudo, formata_brl, cor_status, cor_status_projeto, render_selo_dados
 from utils import charts
 
 init_db()
@@ -92,6 +92,9 @@ mes_col = "mes_ref" if "mes_ref" in df_c_f.columns else None
 if df_f.empty:
     st.info("Nenhum projeto encontrado para os filtros selecionados.")
     st.stop()
+
+# ── Selo de confiança: atualização + completude (recorte filtrado) ────────────
+render_selo_dados(df_f)
 
 # ── KPIs ──────────────────────────────────────────────────────────────────────
 # Linha 1: Orçamento Total | Realizado Total | Saldo Consolidado
