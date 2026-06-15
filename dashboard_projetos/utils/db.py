@@ -41,10 +41,23 @@ COLUNAS_DB_HORAS = [
 
 COLUNAS_DB_ORCAMENTOS = [
     "projeto", "nome_projeto_editado", "orcamento_previsto",
+    "status_projeto",
     "data_inicio",
     "prev_viabilidade", "prev_qualidade", "prev_aprov_lancamento", "prev_lancamento",
     "real_viabilidade", "real_qualidade", "real_aprov_lancamento", "real_lancamento",
 ]
+
+# ── Status do Projeto — opções fixas do dropdown ──────────────────────────────
+STATUS_OPCOES = [
+    "CC criado",
+    "Viabilizado",
+    "Aprovado em Critérios de Qualidade",
+    "Aprovado para Lançamento",
+    "Lançado",
+    "Stand by",
+    "Cancelado",
+]
+STATUS_DEFAULT = STATUS_OPCOES[0]
 
 TIPOS_CUSTOS = {
     "data": "TEXT", "ano": "TEXT", "mes": "TEXT", "filial": "TEXT",
@@ -66,7 +79,8 @@ TIPOS_HORAS = {
 
 TIPOS_ORCAMENTOS = {
     "projeto": "TEXT", "nome_projeto_editado": "TEXT",
-    "orcamento_previsto": "REAL", "data_inicio": "TEXT",
+    "orcamento_previsto": "REAL", "status_projeto": "TEXT",
+    "data_inicio": "TEXT",
     "prev_viabilidade": "TEXT", "prev_qualidade": "TEXT",
     "prev_aprov_lancamento": "TEXT", "prev_lancamento": "TEXT",
     "real_viabilidade": "TEXT", "real_qualidade": "TEXT",
@@ -113,6 +127,7 @@ def init_db() -> None:
                 projeto                 TEXT PRIMARY KEY,
                 nome_projeto_editado    TEXT,
                 orcamento_previsto      REAL DEFAULT 0,
+                status_projeto          TEXT DEFAULT 'CC criado',
                 data_inicio             TEXT,
                 prev_viabilidade        TEXT,
                 prev_qualidade          TEXT,
@@ -226,18 +241,20 @@ def salvar_orcamento(
     real_aprov_lancamento: str | None,
     real_lancamento: str | None,
     nome_projeto_editado: str | None = None,
+    status_projeto: str | None = None,
 ) -> None:
     with _conn() as con:
         con.execute("""
             INSERT INTO orcamentos_cronograma (
-                projeto, nome_projeto_editado, orcamento_previsto, data_inicio,
+                projeto, nome_projeto_editado, orcamento_previsto, status_projeto, data_inicio,
                 prev_viabilidade, prev_qualidade, prev_aprov_lancamento, prev_lancamento,
                 real_viabilidade, real_qualidade, real_aprov_lancamento, real_lancamento,
                 atualizado_em
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
             ON CONFLICT(projeto) DO UPDATE SET
                 nome_projeto_editado    = excluded.nome_projeto_editado,
                 orcamento_previsto      = excluded.orcamento_previsto,
+                status_projeto          = excluded.status_projeto,
                 data_inicio             = excluded.data_inicio,
                 prev_viabilidade        = excluded.prev_viabilidade,
                 prev_qualidade          = excluded.prev_qualidade,
@@ -249,7 +266,7 @@ def salvar_orcamento(
                 real_lancamento         = excluded.real_lancamento,
                 atualizado_em           = datetime('now','localtime')
         """, (
-            projeto, nome_projeto_editado, orcamento_previsto, data_inicio,
+            projeto, nome_projeto_editado, orcamento_previsto, status_projeto, data_inicio,
             prev_viabilidade, prev_qualidade, prev_aprov_lancamento, prev_lancamento,
             real_viabilidade, real_qualidade, real_aprov_lancamento, real_lancamento,
         ))
