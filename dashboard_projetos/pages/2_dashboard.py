@@ -7,7 +7,7 @@ if str(_ROOT) not in sys.path:
 import streamlit as st
 import pandas as pd
 from utils.db import init_db
-from utils.data_processor import agregar_tudo, formata_brl, cor_status
+from utils.data_processor import agregar_tudo, formata_brl, cor_status, cor_status_projeto
 from utils import charts
 
 init_db()
@@ -43,14 +43,17 @@ if df_dashboard.empty:
 lista_projetos = sorted(df_dashboard["nome_projeto"].dropna().unique().tolist())
 lista_anos     = sorted(df_custos_raw["ano"].dropna().astype(str).unique().tolist()) if "ano" in df_custos_raw.columns else []
 lista_meses    = sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolist()) if "mes" in df_custos_raw.columns else []
+lista_status   = sorted(df_dashboard["status_projeto"].dropna().unique().tolist()) if "status_projeto" in df_dashboard.columns else []
 
 if "filtro_projetos" not in st.session_state: st.session_state["filtro_projetos"] = lista_projetos
 if "filtro_anos"     not in st.session_state: st.session_state["filtro_anos"]     = lista_anos
 if "filtro_meses"    not in st.session_state: st.session_state["filtro_meses"]    = lista_meses
+if "filtro_status"   not in st.session_state: st.session_state["filtro_status"]   = lista_status
 
 st.session_state["filtro_projetos"] = [p for p in st.session_state["filtro_projetos"] if p in lista_projetos]
 st.session_state["filtro_anos"]     = [a for a in st.session_state["filtro_anos"]     if a in lista_anos]
 st.session_state["filtro_meses"]    = [m for m in st.session_state["filtro_meses"]    if m in lista_meses]
+st.session_state["filtro_status"]   = [s for s in st.session_state["filtro_status"]   if s in lista_status]
 
 with st.sidebar:
     st.header("🔍 Filtros")
@@ -60,10 +63,13 @@ with st.sidebar:
         default=st.session_state["filtro_anos"], key="filtro_anos")
     meses_selecionados = st.multiselect("Mês:", options=lista_meses,
         default=st.session_state["filtro_meses"], key="filtro_meses")
+    status_selecionados = st.multiselect("Status do Projeto:", options=lista_status,
+        default=st.session_state["filtro_status"], key="filtro_status")
     if st.button("🔄 Limpar filtros", use_container_width=True):
         st.session_state["filtro_projetos"] = lista_projetos
         st.session_state["filtro_anos"]     = lista_anos
         st.session_state["filtro_meses"]    = lista_meses
+        st.session_state["filtro_status"]   = lista_status
         st.rerun()
 
 # ── Filtros ───────────────────────────────────────────────────────────────────
@@ -76,6 +82,8 @@ if anos_selecionados and "ano" in df_custos_raw.columns:
 if meses_selecionados and "mes" in df_custos_raw.columns:
     cc_meses = df_custos_raw[df_custos_raw["mes"].astype(str).isin(meses_selecionados)]["centro_de_custo"].unique()
     df_f = df_f[df_f["projeto"].isin(cc_meses)]
+if status_selecionados and "status_projeto" in df_f.columns:
+    df_f = df_f[df_f["status_projeto"].isin(status_selecionados)]
 
 df_c_f  = df_custos_raw[df_custos_raw["centro_de_custo"].isin(df_f["projeto"])] if not df_custos_raw.empty else df_custos_raw
 df_h_f  = df_horas_raw[df_horas_raw["c_custo"].isin(df_f["projeto"])]           if not df_horas_raw.empty else df_horas_raw
@@ -137,13 +145,14 @@ st.divider()
 # ── Tabela resumo ─────────────────────────────────────────────────────────────
 st.subheader("📋 Resumo por Projeto")
 
-cols_disp = ["projeto", "nome_projeto", "valor_total", "horas_total", "custo_por_hora"]
+cols_disp = ["projeto", "nome_projeto", "status_projeto", "valor_total", "horas_total", "custo_por_hora"]
 if tem_orc:
     cols_disp += ["orcamento", "saldo_orcamento", "pct_orcamento"]
 for c in ["filial", "area", "segmento"]:
     if c in df_f.columns and df_f[c].astype(str).replace("0", "").str.strip().any():
         cols_disp.append(c)
 
+cols_disp = [c for c in cols_disp if c in df_f.columns]
 tabela = df_f[cols_disp].copy()
 if "pct_orcamento" in tabela.columns:
     tabela.insert(0, "🚦", tabela["pct_orcamento"].apply(cor_status))
@@ -151,6 +160,7 @@ if "pct_orcamento" in tabela.columns:
 tabela.rename(columns={
     "projeto":         "CC",
     "nome_projeto":    "Projeto",
+    "status_projeto":  "Status",
     "valor_total":     "Realizado (R$)",
     "horas_total":     "Horas",
     "custo_por_hora":  "R$/h",
@@ -174,9 +184,15 @@ def _cor_pct(val):
     if v >= 70: return "background-color:#713f12;color:#fde68a"
     return "background-color:#14532d;color:#86efac"
 
+def _cor_status_col(val):
+    bg, fg = cor_status_projeto(val)
+    return f"background-color:{bg};color:{fg};font-weight:600"
+
 styler = tabela.style.format(fmt)
 if "% Orç." in tabela.columns:
     styler = styler.map(_cor_pct, subset=["% Orç."])
+if "Status" in tabela.columns:
+    styler = styler.map(_cor_status_col, subset=["Status"])
 
 st.dataframe(styler, use_container_width=True, hide_index=True)
 
