@@ -8,7 +8,10 @@ if str(_ROOT) not in sys.path:
 import streamlit as st
 import pandas as pd
 from utils.db import init_db
-from utils.data_processor import agregar_tudo, formata_brl, cor_status
+from utils.data_processor import (
+    agregar_tudo, formata_brl, cor_status, cor_status_projeto,
+    badge_status_projeto, agrupar_por_nome_projeto,
+)
 from utils import charts
 
 init_db()
@@ -46,15 +49,28 @@ section[data-testid="stSidebar"] { min-width: 240px !important; max-width: 260px
     display:flex; gap:8px; padding:7px 0;
     border-bottom:1px solid rgba(128,128,128,.12);
 }
-.marco-nome  { flex:2.2; font-size:13px; }
-.marco-data  { flex:1.2; font-size:13px; font-weight:600; text-align:center; }
-.marco-badge { flex:1.2; text-align:center; font-size:12px; font-weight:700;
+.marco-nome  { flex:2; font-size:13px; }
+.marco-data  { flex:1.1; font-size:13px; font-weight:600; text-align:center; }
+.marco-badge { flex:1.3; text-align:center; font-size:12px; font-weight:700;
+               border-radius:20px; padding:3px 10px; }
+.marco-tend  { flex:1.3; text-align:center; font-size:12px; font-weight:700;
                border-radius:20px; padding:3px 10px; }
 .badge-ok        { background:rgba(22,163,74,.25);  color:#4ade80; }
 .badge-atrasado  { background:rgba(220,38,38,.25);  color:#f87171; }
 .badge-pendente  { background:rgba(234,179,8,.2);   color:#fbbf24; }
 .badge-futuro    { background:rgba(99,102,241,.2);  color:#a5b4fc; }
 .badge-vazio     { background:rgba(128,128,128,.12);color:rgba(128,128,128,.5); }
+
+/* Consumo de orçamento — barras compactas */
+.consumo-row {
+    display:flex; align-items:center; gap:10px; padding:8px 0;
+    border-bottom:1px solid rgba(128,128,128,.1);
+}
+.consumo-nome { flex:2.2; font-size:13px; font-weight:600; }
+.consumo-bar-wrap { flex:3; background:rgba(128,128,128,.18); border-radius:6px; height:10px; overflow:hidden; }
+.consumo-bar { height:100%; border-radius:6px; }
+.consumo-pct { flex:0.8; text-align:right; font-size:13px; font-weight:700; white-space:nowrap; }
+.consumo-val { flex:1.6; text-align:right; font-size:12px; opacity:.7; white-space:nowrap; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -70,14 +86,17 @@ if df.empty:
 lista_projetos = sorted(df["nome_projeto"].dropna().unique().tolist())
 lista_anos     = sorted(df_custos_raw["ano"].dropna().astype(str).unique().tolist()) if "ano" in df_custos_raw.columns else []
 lista_meses    = sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolist()) if "mes" in df_custos_raw.columns else []
+lista_status   = sorted(df["status_projeto"].dropna().unique().tolist()) if "status_projeto" in df.columns else []
 
 if "filtro_projetos" not in st.session_state: st.session_state["filtro_projetos"] = lista_projetos
 if "filtro_anos"     not in st.session_state: st.session_state["filtro_anos"]     = lista_anos
 if "filtro_meses"    not in st.session_state: st.session_state["filtro_meses"]    = lista_meses
+if "filtro_status"   not in st.session_state: st.session_state["filtro_status"]   = lista_status
 
 st.session_state["filtro_projetos"] = [p for p in st.session_state["filtro_projetos"] if p in lista_projetos]
 st.session_state["filtro_anos"]     = [a for a in st.session_state["filtro_anos"]     if a in lista_anos]
 st.session_state["filtro_meses"]    = [m for m in st.session_state["filtro_meses"]    if m in lista_meses]
+st.session_state["filtro_status"]   = [s for s in st.session_state["filtro_status"]   if s in lista_status]
 
 with st.sidebar:
     st.header("🔍 Filtros")
@@ -87,10 +106,13 @@ with st.sidebar:
         default=st.session_state["filtro_anos"], key="filtro_anos")
     meses_selecionados = st.multiselect("Mês:", options=lista_meses,
         default=st.session_state["filtro_meses"], key="filtro_meses")
+    status_selecionados = st.multiselect("Status do Projeto:", options=lista_status,
+        default=st.session_state["filtro_status"], key="filtro_status")
     if st.button("🔄 Limpar filtros", use_container_width=True):
         st.session_state["filtro_projetos"] = lista_projetos
         st.session_state["filtro_anos"]     = lista_anos
         st.session_state["filtro_meses"]    = lista_meses
+        st.session_state["filtro_status"]   = lista_status
         st.rerun()
 
 # ── Aplicação dos filtros ─────────────────────────────────────────────────────
@@ -103,6 +125,8 @@ if anos_selecionados and "ano" in df_custos_raw.columns:
 if meses_selecionados and "mes" in df_custos_raw.columns:
     cc = df_custos_raw[df_custos_raw["mes"].astype(str).isin(meses_selecionados)]["centro_de_custo"].unique()
     df_f = df_f[df_f["projeto"].isin(cc)]
+if status_selecionados and "status_projeto" in df_f.columns:
+    df_f = df_f[df_f["status_projeto"].isin(status_selecionados)]
 
 if df_f.empty:
     st.info("Nenhum projeto encontrado para os filtros selecionados.")
@@ -111,7 +135,7 @@ if df_f.empty:
 tem_orc = (df_f.get("orcamento", pd.Series([0])) > 0).any()
 hoje    = datetime.today().date()
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Helpers de data ───────────────────────────────────────────────────────────
 def _parse(val):
     if not val or str(val) in ("0", "None", "nan", ""): return None
     try: return datetime.strptime(str(val)[:10], "%Y-%m-%d").date()
@@ -138,6 +162,30 @@ def _badge(col_prev, col_real, prev_d, real_d) -> str:
                 else f"<span class='marco-badge badge-futuro'>🗓️ Em {abs(diff)}d</span>")
     return "<span class='marco-badge badge-vazio'>Não informado</span>"
 
+def _tendencia(col_prev, col_real, prev_d, real_d) -> str:
+    """
+    Calcula a Tendência entre previsto e realizado de um marco:
+      - "-"                    : dados insuficientes para o cálculo
+      - "No prazo"             : realizado <= previsto
+      - "Em atraso (x dias)"    : realizado > previsto, x dias de atraso
+    Para marcos sem 'realizado' (ex: Início CC), retorna "-".
+    """
+    if col_real is None:
+        return "-"
+    if not prev_d or not real_d:
+        return "-"
+    diff = (real_d - prev_d).days
+    if diff <= 0:
+        return "No prazo"
+    return f"Em atraso ({diff} dias)"
+
+def _badge_tendencia(tendencia: str) -> str:
+    if tendencia == "-":
+        return "<span class='marco-tend badge-vazio'>-</span>"
+    if tendencia == "No prazo":
+        return "<span class='marco-tend badge-ok'>No prazo</span>"
+    return f"<span class='marco-tend badge-atrasado'>{tendencia}</span>"
+
 MARCOS_DEF = [
     ("data_inicio",           None,                   "Início CC"),
     ("prev_viabilidade",      "real_viabilidade",     "Viabilidade"),
@@ -147,12 +195,14 @@ MARCOS_DEF = [
 ]
 
 def _tabela_marcos_html(row) -> str:
+    """Tabela de cronograma com colunas: Marco | Previsto | Realizado | Situação | Tendência."""
     html = """
     <div class='marco-header'>
         <div class='marco-nome'>Marco</div>
         <div class='marco-data'>Previsto</div>
         <div class='marco-data'>Realizado</div>
-        <div class='marco-badge' style='flex:1.2;text-align:center'>Situação</div>
+        <div class='marco-badge'>Situação</div>
+        <div class='marco-tend'>Tendência</div>
     </div>"""
     tem = False
     for col_prev, col_real, nome in MARCOS_DEF:
@@ -161,27 +211,28 @@ def _tabela_marcos_html(row) -> str:
         if not prev_d and not real_d:
             continue
         tem = True
+        tendencia = _tendencia(col_prev, col_real, prev_d, real_d)
         html += f"""
         <div class='marco-row'>
             <div class='marco-nome'>{nome}</div>
             <div class='marco-data'>{prev_d.strftime('%d/%m/%Y') if prev_d else '—'}</div>
             <div class='marco-data'>{real_d.strftime('%d/%m/%Y') if real_d else '—'}</div>
             {_badge(col_prev, col_real, prev_d, real_d)}
+            {_badge_tendencia(tendencia)}
         </div>"""
     return html if tem else ""
 
 # ═══════════════════════════════════════════════════════════════════
-# TABS — removida a aba "Timeline de Projetos"
+# TABS
 # ═══════════════════════════════════════════════════════════════════
 tab_resumo, tab_detalhe = st.tabs(["📊 Resumo Geral", "🔍 Detalhamento"])
 
 # ───────────────────────────────────────────────────────────────────
-# TAB 1 — RESUMO GERAL
+# TAB 1 — RESUMO GERAL (conciso, sem gauges)
 # ───────────────────────────────────────────────────────────────────
 with tab_resumo:
     total_custo   = df_f["valor_total"].sum()
     total_horas   = df_f["horas_total"].sum()
-    custo_h_medio = total_custo / total_horas if total_horas > 0 else 0
     total_orc     = df_f["orcamento"].sum() if tem_orc else 0
     saldo_total   = total_orc - total_custo if tem_orc else None
     pct_cons      = (total_custo / total_orc * 100) if tem_orc and total_orc > 0 else None
@@ -212,24 +263,37 @@ with tab_resumo:
     r2c3.metric("⚠️ Com Atraso",      str(n_atrasados))
 
     st.markdown("")
+    st.divider()
 
+    # ── Nova visualização: Consumo de Orçamento — barras horizontais compactas ──
     if tem_orc:
-        st.subheader("Consumo de Orçamento")
-        n = len(df_f)
-        gauge_cols = st.columns(min(n, 4))
-        for i, (_, row) in enumerate(df_f.iterrows()):
-            with gauge_cols[i % len(gauge_cols)]:
-                nome_gauge = str(row.get("nome_projeto", "")) or row["projeto"]
-                st.plotly_chart(
-                    charts.gauge_orcamento(nome_gauge, row["pct_orcamento"]),
-                    use_container_width=True,
-                    key=f"gauge_resumo_{row['projeto']}_{i}",
-                )
-        st.divider()
+        st.subheader("💳 Consumo de Orçamento por Projeto")
+
+        df_consumo = df_f[df_f["orcamento"] > 0].sort_values("pct_orcamento", ascending=False)
+
+        if df_consumo.empty:
+            st.caption("Nenhum projeto com orçamento cadastrado nos filtros atuais.")
+        else:
+            for _, row in df_consumo.iterrows():
+                pct = row["pct_orcamento"]
+                cor = "#dc2626" if pct > 100 else ("#f59e0b" if pct >= 80 else "#22c55e")
+                nome_proj = row.get("nome_projeto", row["projeto"])
+                largura = min(pct, 100)
+                alerta = " 🚨" if pct > 100 else ""
+                st.markdown(f"""
+                <div class='consumo-row'>
+                    <div class='consumo-nome'>{nome_proj}</div>
+                    <div class='consumo-bar-wrap'>
+                        <div class='consumo-bar' style='width:{largura:.1f}%;background:{cor}'></div>
+                    </div>
+                    <div class='consumo-pct' style='color:{cor}'>{pct:.1f}%{alerta}</div>
+                    <div class='consumo-val'>{formata_brl(row['valor_total'])} / {formata_brl(row['orcamento'])}</div>
+                </div>""", unsafe_allow_html=True)
     else:
         st.plotly_chart(charts.grafico_realizado_por_projeto(df_f),
                         use_container_width=True, key="grafico_realizado_resumo")
-        st.divider()
+
+    st.divider()
 
     # Tabela de status
     st.subheader("Status Rápido")
@@ -251,13 +315,14 @@ with tab_resumo:
             "🚦":               cor_status(pct) if tem_orc and pct else "📋",
             "Projeto":          row.get("nome_projeto", row["projeto"]),
             "CC":               row["projeto"],
+            "Status":           row.get("status_projeto", "—"),
             "Realizado":        formata_brl(row["valor_total"]),
             "Orçamento":        formata_brl(row["orcamento"]) if tem_orc and row.get("orcamento", 0) > 0 else "N/D",
             "% Orç.":           f"{pct:.0f}%" if tem_orc and pct else "—",
             "Horas":            f"{row['horas_total']:.0f} h",
             "Início CC":        _fmt(row.get("data_inicio")),
             "Lançamento Prev.": _fmt(row.get("prev_lancamento")),
-            "Status":           _status_lanc(row),
+            "Status Lanç.":     _status_lanc(row),
         })
 
     st.dataframe(pd.DataFrame(rows_st), use_container_width=True, hide_index=True)
@@ -267,48 +332,57 @@ with tab_resumo:
         "status_projetos.csv", "text/csv")
 
 # ───────────────────────────────────────────────────────────────────
-# TAB 2 — DETALHAMENTO
+# TAB 2 — DETALHAMENTO (agrupado por nome do projeto, sem o CC)
 # ───────────────────────────────────────────────────────────────────
 with tab_detalhe:
     st.subheader("🔍 Detalhamento por Projeto")
+    st.caption(
+        "Projetos com o mesmo nome (ignorando o código de Centro de Custo) "
+        "são agrupados em um único item."
+    )
 
-    proj_opcoes = df_f["nome_projeto"].tolist()
-    proj_map    = dict(zip(df_f["nome_projeto"], df_f["projeto"]))
+    # Agrupamento: ignora os 9 dígitos do CC no início do nome_projeto
+    df_grp = agrupar_por_nome_projeto(df_f)
+
+    proj_opcoes = df_grp["nome_projeto"].tolist()
 
     projeto_detalhe = st.selectbox(
         "Selecione um projeto:",
         options=proj_opcoes,
-        format_func=lambda x: f"{proj_map.get(x, '')} — {x}",
     )
 
-    row = df_f[df_f["nome_projeto"] == projeto_detalhe].iloc[0]
-    cc  = row["projeto"]
+    row = df_grp[df_grp["nome_projeto"] == projeto_detalhe].iloc[0]
+    cc  = row["projeto"]  # pode ser "100150268, 100150311" se agrupado
 
     # Header do projeto
     extras = " · ".join(
         str(row.get(c, "")) for c in ["filial", "area", "segmento"]
         if row.get(c, "") not in ("", "0", 0)
     )
+    status_proj = row.get("status_projeto", "")
     st.markdown(f"""
     <div style="background:linear-gradient(90deg,rgba(37,99,235,.6),rgba(37,99,235,.25));
                 border:1px solid rgba(37,99,235,.4);border-radius:12px;
                 padding:16px 22px;margin:10px 0 18px">
-        <div style="font-size:19px;font-weight:700">{row['nome_projeto']}</div>
-        <div style="font-size:12px;opacity:.7;margin-top:4px">
-            CC: {cc}{(' · ' + extras) if extras else ''}
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+            <div>
+                <div style="font-size:19px;font-weight:700">{row['nome_projeto']}</div>
+                <div style="font-size:12px;opacity:.7;margin-top:4px">
+                    CC: {cc}{(' · ' + extras) if extras else ''}
+                </div>
+            </div>
+            <div>{badge_status_projeto(status_proj) if status_proj else ''}</div>
         </div>
     </div>""", unsafe_allow_html=True)
 
-    # ── KPIs do projeto — 5 indicadores em 2 linhas ──────────────────────────
+    # ── KPIs do projeto — 6 indicadores em 2 linhas ──────────────────────────
     saldo_proj = row.get("saldo_orcamento", 0) if row.get("orcamento", 0) > 0 else None
 
-    # Linha 1: Realizado | Orçamento | Saldo
     kp1, kp2, kp3 = st.columns(3)
     kp1.metric("💰 Realizado",  formata_brl(row["valor_total"]))
     kp2.metric("🎯 Orçamento",  formata_brl(row["orcamento"]) if row.get("orcamento", 0) > 0 else "N/D")
     kp3.metric("💹 Saldo",      formata_brl(saldo_proj) if saldo_proj is not None else "N/D")
 
-    # Linha 2: Horas | Custo/h | Colaboradores
     kp4, kp5, kp6 = st.columns(3)
     kp4.metric("⏱️ Horas",        f"{row['horas_total']:.0f} h")
     kp5.metric("📐 Custo/h",      formata_brl(row["custo_por_hora"]))
@@ -333,19 +407,27 @@ with tab_detalhe:
 
     st.divider()
 
-    # ── Cronograma ────────────────────────────────────────────────────────────
+    # ── Cronograma com coluna Tendência ──────────────────────────────────────
     st.markdown("#### 📅 Cronograma")
     marcos_html = _tabela_marcos_html(row)
     if marcos_html:
         st.markdown(marcos_html, unsafe_allow_html=True)
+        st.caption(
+            "**Tendência**: \"No prazo\" se o realizado ocorreu até a data prevista; "
+            "\"Em atraso (x dias)\" indica quantos dias após o previsto; "
+            "\"-\" quando não há dados suficientes para o cálculo."
+        )
     else:
         st.caption("ℹ️ Sem datas cadastradas. Acesse **Orçamentos** para informar.")
 
     st.divider()
 
     # ── Gráfico: Distribuição de Horas por Colaborador (com Área) ────────────
+    # Para projetos agrupados (múltiplos CCs), filtra por todos os CCs do grupo
+    ccs_grupo = [c.strip() for c in str(cc).split(",")]
+
     if not df_horas_raw.empty and "c_custo" in df_horas_raw.columns:
-        df_h_proj = df_horas_raw[df_horas_raw["c_custo"] == cc]
+        df_h_proj = df_horas_raw[df_horas_raw["c_custo"].isin(ccs_grupo)]
         if not df_h_proj.empty and "nome" in df_h_proj.columns:
             st.markdown("#### ⏱️ Distribuição de Horas por Colaborador")
             st.plotly_chart(
@@ -357,7 +439,7 @@ with tab_detalhe:
 
     # ── Gráfico: Evolução Mensal de Desembolsos (área + colunas combinado) ───
     if not df_custos_raw.empty and "centro_de_custo" in df_custos_raw.columns:
-        df_c_proj = df_custos_raw[df_custos_raw["centro_de_custo"] == cc]
+        df_c_proj = df_custos_raw[df_custos_raw["centro_de_custo"].isin(ccs_grupo)]
         if not df_c_proj.empty and "mes_ref" in df_c_proj.columns:
             st.markdown("#### 📈 Evolução Mensal de Desembolsos")
             st.plotly_chart(
