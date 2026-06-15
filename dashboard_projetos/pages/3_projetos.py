@@ -9,8 +9,9 @@ import streamlit as st
 import pandas as pd
 from utils.db import init_db
 from utils.data_processor import (
-    agregar_tudo, formata_brl, cor_status, cor_status_projeto,
+    agregar_tudo, formata_brl, formata_brl_curto, cor_status, cor_status_projeto,
     badge_status_projeto, agrupar_por_nome_projeto, render_selo_dados,
+    aviso_truncamento, detectar_excecoes, render_faixa_alertas,
 )
 from utils import charts
 
@@ -242,23 +243,47 @@ with tab_resumo:
     pct_cons      = (total_custo / total_orc * 100) if tem_orc and total_orc > 0 else None
     n_proj        = len(df_f)
 
-    n_atrasados = 0
-    for _, row in df_f.iterrows():
-        prev_d = _parse(row.get("prev_lancamento"))
-        real_d = _parse(row.get("real_lancamento"))
-        if prev_d:
-            ref = real_d if real_d else hoje
-            if ref > prev_d:
-                n_atrasados += 1
+    # Detecção centralizada de exceções (Fase 2)
+    exc = detectar_excecoes(df_f)
+    n_atrasados = len(exc["atrasados"])
+
+    # ── 2.1 — Faixa de alertas no topo ────────────────────────────────────────
+    st.markdown("##### ⚡ Pontos de Atenção")
+    render_faixa_alertas(df_f)
+    st.markdown("")
 
     # Linha 1: Orçamento Total | Realizado Total | Saldo Consolidado
     r1c1, r1c2, r1c3 = st.columns(3)
-    r1c1.metric("🎯 Orçamento Total",  formata_brl(total_orc) if tem_orc else "Não cadastrado")
-    r1c2.metric("💰 Realizado Total",  formata_brl(total_custo))
-    r1c3.metric("💹 Saldo Consolidado",
-                formata_brl(saldo_total) if saldo_total is not None else "N/D",
-                delta=f"{pct_cons:.1f}% consumido" if pct_cons else None,
-                delta_color="inverse")
+    r1c1.metric(
+        "🎯 Orçamento Total",
+        formata_brl_curto(total_orc) if tem_orc else "Não cadastrado",
+        help=f"Valor exato: {formata_brl(total_orc)}" if tem_orc else None,
+    )
+    r1c2.metric(
+        "💰 Realizado Total",
+        formata_brl_curto(total_custo),
+        help=f"Valor exato: {formata_brl(total_custo)}",
+    )
+
+    # ── 2.2 — Saldo Consolidado com contagem de exceções ──────────────────────
+    if exc["n_estouro"] > 0:
+        saldo_delta = f"🚨 {exc['n_estouro']} em estouro · +{formata_brl_curto(exc['excedente_total'])}"
+        saldo_help = (
+            f"Saldo exato: {formata_brl(saldo_total) if saldo_total is not None else 'N/D'}\n\n"
+            f"{exc['n_estouro']} projeto(s) acima do orçamento, "
+            f"somando {formata_brl(exc['excedente_total'])} de excedente."
+        )
+    else:
+        saldo_delta = f"{pct_cons:.1f}% consumido" if pct_cons else None
+        saldo_help = f"Valor exato: {formata_brl(saldo_total)}" if saldo_total is not None else None
+
+    r1c3.metric(
+        "💹 Saldo Consolidado",
+        formata_brl_curto(saldo_total) if saldo_total is not None else "N/D",
+        delta=saldo_delta,
+        delta_color="inverse",
+        help=saldo_help,
+    )
 
     # Linha 2: Projetos Ativos | Horas Totais | Com Atraso
     r2c1, r2c2, r2c3 = st.columns(3)
@@ -309,6 +334,7 @@ with tab_resumo:
     else:
         st.plotly_chart(charts.grafico_realizado_por_projeto(df_f),
                         use_container_width=True, key="grafico_realizado_resumo")
+        aviso_truncamento(len(df_f))
 
     st.divider()
 
