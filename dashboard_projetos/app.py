@@ -10,10 +10,7 @@ os.environ["PYTHONPATH"] = str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH",
 import streamlit as st
 import streamlit.components.v1 as components
 from utils.db   import init_db, migrar_db
-from utils.auth import (
-    garantir_sessao_padrao, perfil_admin, mostrando_login,
-    exibir_login, solicitar_login, voltar_para_visualizador,
-)
+from utils.auth import exigir_login, perfil_admin, logout
 
 st.set_page_config(
     page_title="Dashboard de Projetos",
@@ -72,19 +69,21 @@ try {
 init_db()
 migrar_db()
 
-garantir_sessao_padrao()
+# ── GATE DE AUTENTICAÇÃO ──────────────────────────────────────────────────────
+# Barreira obrigatória: se não autenticado, exigir_login() renderiza só a tela
+# de login e chama st.stop(). Como init_db/migrar_db apenas garantem o schema
+# (não expõem dados), e nenhuma PÁGINA roda antes de pg.run() lá embaixo,
+# nenhum dado de projeto é lido ou renderizado sem login bem-sucedido.
+exigir_login()
 
-# ── Tela de login clássica (acionada via botão "Alterar usuário") ────────────
-if mostrando_login():
-    exibir_login()
-    st.stop()
+# Daqui em diante, o usuário está autenticado.
+admin = perfil_admin()
 
-# ── Sidebar: perfil atual + ação de troca de usuário ─────────────────────────
+# ── Sidebar: perfil atual + logout ────────────────────────────────────────────
 with st.sidebar:
-    nome   = st.session_state.get("nome", "Visitante")
-    admin  = perfil_admin()
-    icone  = "🔑" if admin else "👁️"
-    badge  = "Administrador" if admin else "Visualizador"
+    nome  = st.session_state.get("nome", "Usuário")
+    icone = "🔑" if admin else "👁️"
+    badge = "Administrador" if admin else "Visualizador"
 
     st.markdown(f"""
     <div style="padding:10px 4px 14px;border-bottom:1px solid rgba(128,128,128,.2);margin-bottom:8px">
@@ -93,16 +92,10 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    if admin:
-        if st.button("🔓 Sair do modo Admin", use_container_width=True):
-            voltar_para_visualizador()
-            st.rerun()
-    else:
-        if st.button("🔑 Alterar usuário", use_container_width=True):
-            solicitar_login()
-            st.rerun()
+    if st.button("🚪 Sair", use_container_width=True):
+        logout()
 
-    # ── 5.5 — Onboarding mínimo: fluxo de uso ─────────────────────────────────
+    # ── Onboarding mínimo: fluxo de uso ───────────────────────────────────────
     with st.expander("❓ Como usar este painel"):
         st.markdown(
             "**Fluxo recomendado:**\n\n"
