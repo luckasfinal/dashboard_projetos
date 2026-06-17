@@ -1,0 +1,30 @@
+# ── Segredos e variáveis de ambiente — NUNCA versionar ──
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+secrets.toml
+
+# ── Banco de dados local ──
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+ENV/
+
+# ── Sistema operacional / editor ──
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
