@@ -317,6 +317,31 @@ def importar_orcamento_de_excel(conteudo: bytes) -> int:
     return importados
 
 
+def aplicar_filtros(
+    df: pd.DataFrame,
+    df_custos_raw: pd.DataFrame,
+    projetos_sel: list,
+    anos_sel: list,
+    meses_sel: list,
+    status_sel: list,
+) -> pd.DataFrame:
+    """Aplica os 4 critérios de filtro (Projetos, Ano, Mês, Status).
+    Seleção vazia em qualquer critério = não filtra por ele (mostra tudo).
+    """
+    df_f = df.copy()
+    if projetos_sel:
+        df_f = df_f[df_f["nome_projeto"].isin(projetos_sel)]
+    if anos_sel and "ano" in df_custos_raw.columns:
+        cc_anos = df_custos_raw[df_custos_raw["ano"].astype(str).isin(anos_sel)]["centro_de_custo"].unique()
+        df_f = df_f[df_f["projeto"].isin(cc_anos)]
+    if meses_sel and "mes" in df_custos_raw.columns:
+        cc_meses = df_custos_raw[df_custos_raw["mes"].astype(str).isin(meses_sel)]["centro_de_custo"].unique()
+        df_f = df_f[df_f["projeto"].isin(cc_meses)]
+    if status_sel and "status_projeto" in df_f.columns:
+        df_f = df_f[df_f["status_projeto"].isin(status_sel)]
+    return df_f
+
+
 # ─────────────────────────────────────────────
 # Agregação completa (lê do banco)
 # ─────────────────────────────────────────────
