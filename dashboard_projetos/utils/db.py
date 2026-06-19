@@ -200,3 +200,64 @@ def migrar_db() -> None:
                 if col not in existentes:
                     tipo = tipos.get(col, "TEXT")
                     con.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {col} {tipo}"))
+
+
+# ─────────────────────────────────────────────────────
+# Gravação e leitura — custos
+# ─────────────────────────────────────────────────────
+
+def _ja_importado(arquivo: str, tipo: str) -> bool:
+    with _engine().connect() as con:
+        row = con.execute(
+            text("SELECT 1 FROM importacoes WHERE arquivo = :arquivo AND tipo = :tipo LIMIT 1"),
+            {"arquivo": arquivo, "tipo": tipo},
+        ).fetchone()
+        return row is not None
+
+
+def salvar_custos(df: pd.DataFrame, nome_arquivo: str) -> tuple[int, bool]:
+    if _ja_importado(nome_arquivo, "custos"):
+        return 0, True
+    df_ins = df.reindex(columns=COLUNAS_DB_CUSTOS)
+    df_ins["arquivo"] = nome_arquivo
+    df_ins["importado_em"] = _agora()
+    with _engine().begin() as con:
+        df_ins.to_sql("custos", con, if_exists="append", index=False)
+        con.execute(
+            text(
+                "INSERT INTO importacoes (arquivo, tipo, linhas, importado_em) "
+                "VALUES (:arquivo, 'custos', :linhas, :agora)"
+            ),
+            {"arquivo": nome_arquivo, "linhas": len(df_ins), "agora": _agora()},
+        )
+    return len(df_ins), False
+
+
+def carregar_custos() -> pd.DataFrame:
+    with _engine().connect() as con:
+        return pd.read_sql(text("SELECT * FROM custos"), con)
+
+
+def listar_importacoes() -> pd.DataFrame:
+    with _engine().connect() as con:
+        return pd.read_sql(
+            text(
+                "SELECT tipo, arquivo, importado_em, linhas FROM importacoes "
+                "ORDER BY importado_em DESC"
+            ),
+            con,
+        )
+
+
+def deletar_importacao(nome_arquivo: str, tipo: str) -> int:
+    tabela = "custos" if tipo == "custos" else "horas"
+    with _engine().begin() as con:
+        resultado = con.execute(
+            text(f"DELETE FROM {tabela} WHERE arquivo = :arquivo"),
+            {"arquivo": nome_arquivo},
+        )
+        con.execute(
+            text("DELETE FROM importacoes WHERE arquivo = :arquivo AND tipo = :tipo"),
+            {"arquivo": nome_arquivo, "tipo": tipo},
+        )
+        return resultado.rowcount
