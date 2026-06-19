@@ -5,3 +5,5 @@ plotly
 matplotlib
 xlrd
 reportlab
+sqlalchemy
+psycopg2-binary
