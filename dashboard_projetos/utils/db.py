@@ -288,3 +288,93 @@ def salvar_horas(df: pd.DataFrame, nome_arquivo: str) -> tuple[int, bool]:
 def carregar_horas() -> pd.DataFrame:
     with _engine().connect() as con:
         return pd.read_sql(text("SELECT * FROM horas"), con)
+
+
+# ─────────────────────────────────────────────────────
+# Gravação e leitura — orçamentos / cronograma
+# ─────────────────────────────────────────────────────
+
+def salvar_orcamento(
+    projeto: str,
+    orcamento_previsto: float,
+    data_inicio: str | None,
+    prev_viabilidade: str | None,
+    prev_qualidade: str | None,
+    prev_aprov_lancamento: str | None,
+    prev_lancamento: str | None,
+    real_viabilidade: str | None,
+    real_qualidade: str | None,
+    real_aprov_lancamento: str | None,
+    real_lancamento: str | None,
+    nome_projeto_editado: str | None = None,
+    status_projeto: str | None = None,
+) -> None:
+    with _engine().begin() as con:
+        con.execute(text("""
+            INSERT INTO orcamentos_cronograma (
+                projeto, nome_projeto_editado, orcamento_previsto, status_projeto, data_inicio,
+                prev_viabilidade, prev_qualidade, prev_aprov_lancamento, prev_lancamento,
+                real_viabilidade, real_qualidade, real_aprov_lancamento, real_lancamento,
+                atualizado_em
+            ) VALUES (
+                :projeto, :nome_projeto_editado, :orcamento_previsto, :status_projeto, :data_inicio,
+                :prev_viabilidade, :prev_qualidade, :prev_aprov_lancamento, :prev_lancamento,
+                :real_viabilidade, :real_qualidade, :real_aprov_lancamento, :real_lancamento,
+                :atualizado_em
+            )
+            ON CONFLICT (projeto) DO UPDATE SET
+                nome_projeto_editado    = excluded.nome_projeto_editado,
+                orcamento_previsto      = excluded.orcamento_previsto,
+                status_projeto          = excluded.status_projeto,
+                data_inicio             = excluded.data_inicio,
+                prev_viabilidade        = excluded.prev_viabilidade,
+                prev_qualidade          = excluded.prev_qualidade,
+                prev_aprov_lancamento   = excluded.prev_aprov_lancamento,
+                prev_lancamento         = excluded.prev_lancamento,
+                real_viabilidade        = excluded.real_viabilidade,
+                real_qualidade          = excluded.real_qualidade,
+                real_aprov_lancamento   = excluded.real_aprov_lancamento,
+                real_lancamento         = excluded.real_lancamento,
+                atualizado_em           = excluded.atualizado_em
+        """), {
+            "projeto": projeto,
+            "nome_projeto_editado": nome_projeto_editado,
+            "orcamento_previsto": orcamento_previsto,
+            "status_projeto": status_projeto,
+            "data_inicio": data_inicio,
+            "prev_viabilidade": prev_viabilidade,
+            "prev_qualidade": prev_qualidade,
+            "prev_aprov_lancamento": prev_aprov_lancamento,
+            "prev_lancamento": prev_lancamento,
+            "real_viabilidade": real_viabilidade,
+            "real_qualidade": real_qualidade,
+            "real_aprov_lancamento": real_aprov_lancamento,
+            "real_lancamento": real_lancamento,
+            "atualizado_em": _agora(),
+        })
+
+
+def carregar_orcamentos() -> pd.DataFrame:
+    with _engine().connect() as con:
+        return pd.read_sql(text("SELECT * FROM orcamentos_cronograma"), con)
+
+
+def carregar_orcamento_projeto(projeto: str) -> dict | None:
+    with _engine().connect() as con:
+        resultado = con.execute(
+            text("SELECT * FROM orcamentos_cronograma WHERE projeto = :projeto"),
+            {"projeto": projeto},
+        )
+        linha = resultado.fetchone()
+        if linha is None:
+            return None
+        return dict(linha._mapping)
+
+
+def deletar_orcamento_projeto(projeto: str) -> bool:
+    with _engine().begin() as con:
+        resultado = con.execute(
+            text("DELETE FROM orcamentos_cronograma WHERE projeto = :projeto"),
+            {"projeto": projeto},
+        )
+        return resultado.rowcount > 0
