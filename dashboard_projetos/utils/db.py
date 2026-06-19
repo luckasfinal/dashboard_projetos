@@ -261,3 +261,30 @@ def deletar_importacao(nome_arquivo: str, tipo: str) -> int:
             {"arquivo": nome_arquivo, "tipo": tipo},
         )
         return resultado.rowcount
+
+
+# ─────────────────────────────────────────────────────
+# Gravação e leitura — horas
+# ─────────────────────────────────────────────────────
+
+def salvar_horas(df: pd.DataFrame, nome_arquivo: str) -> tuple[int, bool]:
+    if _ja_importado(nome_arquivo, "horas"):
+        return 0, True
+    df_ins = df.reindex(columns=COLUNAS_DB_HORAS)
+    df_ins["arquivo"] = nome_arquivo
+    df_ins["importado_em"] = _agora()
+    with _engine().begin() as con:
+        df_ins.to_sql("horas", con, if_exists="append", index=False)
+        con.execute(
+            text(
+                "INSERT INTO importacoes (arquivo, tipo, linhas, importado_em) "
+                "VALUES (:arquivo, 'horas', :linhas, :agora)"
+            ),
+            {"arquivo": nome_arquivo, "linhas": len(df_ins), "agora": _agora()},
+        )
+    return len(df_ins), False
+
+
+def carregar_horas() -> pd.DataFrame:
+    with _engine().connect() as con:
+        return pd.read_sql(text("SELECT * FROM horas"), con)
