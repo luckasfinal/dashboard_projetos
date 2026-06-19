@@ -46,6 +46,8 @@ import streamlit as st
 from utils.db import (
     carregar_custos, carregar_horas, carregar_orcamentos,
     listar_importacoes, STATUS_OPCOES, STATUS_DEFAULT,
+    salvar_custos, salvar_horas,
+    salvar_orcamento, carregar_orcamento_projeto, salvar_previsao_periodo,
 )
 import re
 
@@ -206,6 +208,113 @@ def validar_colunas(df: pd.DataFrame, esperadas: dict, nome: str) -> list[str]:
     if faltando:
         return [f"**{nome}** — colunas ausentes após mapeamento: `{', '.join(faltando)}`"]
     return []
+
+
+def processar_arquivo_custos(arquivo) -> dict:
+    """Lê, valida e salva um arquivo de custos.
+
+    Retorna {"ok": bool, "mensagem": str, "colunas": list[str] | None}.
+    `colunas` só é preenchido quando há erro de validação (uso em depuração na UI).
+    """
+    df = preparar_custos(ler_planilha_bytes(arquivo.read(), arquivo.name))
+    erros = validar_colunas(df, COLUNAS_CUSTOS, "Custos")
+    if erros:
+        return {"ok": False, "mensagem": erros[0], "colunas": list(df.columns)}
+
+    linhas, duplicado = salvar_custos(df, arquivo.name)
+    if duplicado:
+        return {"ok": False, "mensagem": f"'{arquivo.name}' já foi importado — ignorado.", "colunas": None}
+    return {"ok": True, "mensagem": f"Custos: **{linhas} linhas** de `{arquivo.name}` salvas.", "colunas": None}
+
+
+def processar_arquivo_horas(arquivo) -> dict:
+    """Lê, valida e salva um arquivo de horas.
+
+    Retorna {"ok": bool, "mensagem": str, "colunas": list[str] | None}.
+    `colunas` só é preenchido quando há erro de validação (uso em depuração na UI).
+    """
+    df = preparar_horas(ler_planilha_bytes(arquivo.read(), arquivo.name))
+    erros = validar_colunas(df, COLUNAS_HORAS, "Horas")
+    if erros:
+        return {"ok": False, "mensagem": erros[0], "colunas": list(df.columns)}
+
+    linhas, duplicado = salvar_horas(df, arquivo.name)
+    if duplicado:
+        return {"ok": False, "mensagem": f"'{arquivo.name}' já foi importado — ignorado.", "colunas": None}
+    return {"ok": True, "mensagem": f"Horas: **{linhas} linhas** de `{arquivo.name}` salvas.", "colunas": None}
+
+
+def _texto_celula(valor) -> str:
+    """Converte uma célula de planilha em string, tratando NaN/None como vazio."""
+    if pd.isna(valor):
+        return ""
+    return str(valor).strip()
+
+
+def _numero_celula(valor) -> float:
+    """Converte uma célula de planilha em float, tratando NaN/None/inválido como 0."""
+    if pd.isna(valor):
+        return 0.0
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def importar_orcamento_de_excel(conteudo: bytes) -> int:
+    """Importa orçamentos e previsões a partir do conteúdo de um .xlsx exportado
+    anteriormente (abas 'Orcamentos' e 'Previsoes'). Retorna o nº de projetos importados.
+    """
+    xl = pd.ExcelFile(io.BytesIO(conteudo))
+    importados = 0
+
+    if "Orcamentos" in xl.sheet_names:
+        df_imp_orc = xl.parse("Orcamentos")
+        for _, row in df_imp_orc.iterrows():
+            proj = _texto_celula(row.get("projeto"))
+            if not proj:
+                continue
+
+            # Status do Projeto: se a planilha importada não trouxer esta coluna
+            # (ou vier vazia), preserva o status já salvo no banco em vez de
+            # sobrescrever com vazio/Nulo.
+            status_imp = _texto_celula(row.get("status_projeto"))
+            if not status_imp or status_imp not in STATUS_OPCOES:
+                existente = carregar_orcamento_projeto(proj)
+                status_imp = (existente.get("status_projeto") if existente else None) or STATUS_DEFAULT
+
+            salvar_orcamento(
+                projeto               = proj,
+                orcamento_previsto    = _numero_celula(row.get("orcamento_previsto")),
+                status_projeto        = status_imp,
+                data_inicio           = _texto_celula(row.get("data_inicio")) or None,
+                prev_viabilidade      = _texto_celula(row.get("prev_viabilidade")) or None,
+                prev_qualidade        = _texto_celula(row.get("prev_qualidade")) or None,
+                prev_aprov_lancamento = _texto_celula(row.get("prev_aprov_lancamento")) or None,
+                prev_lancamento       = _texto_celula(row.get("prev_lancamento")) or None,
+                real_viabilidade      = _texto_celula(row.get("real_viabilidade")) or None,
+                real_qualidade        = _texto_celula(row.get("real_qualidade")) or None,
+                real_aprov_lancamento = _texto_celula(row.get("real_aprov_lancamento")) or None,
+                real_lancamento       = _texto_celula(row.get("real_lancamento")) or None,
+                nome_projeto_editado  = _texto_celula(row.get("nome_projeto_editado")) or None,
+            )
+            importados += 1
+
+    if "Previsoes" in xl.sheet_names:
+        df_imp_prev = xl.parse("Previsoes")
+        for _, row in df_imp_prev.iterrows():
+            proj = _texto_celula(row.get("projeto"))
+            if not proj:
+                continue
+            salvar_previsao_periodo(
+                projeto      = proj,
+                periodo      = _texto_celula(row.get("periodo")),
+                valor        = _numero_celula(row.get("valor")),
+                tipo_periodo = _texto_celula(row.get("tipo_periodo")) or "anual",
+                descricao    = _texto_celula(row.get("descricao")) or None,
+            )
+
+    return importados
 
 
 # ─────────────────────────────────────────────

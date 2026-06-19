@@ -16,7 +16,9 @@ from utils.db import (
     carregar_orcamentos,
     STATUS_OPCOES, STATUS_DEFAULT,
 )
-from utils.data_processor import agregar_tudo, formata_brl, badge_status_projeto
+from utils.data_processor import (
+    agregar_tudo, formata_brl, badge_status_projeto, importar_orcamento_de_excel,
+)
 from utils.auth import perfil_admin
 
 init_db()
@@ -442,58 +444,18 @@ with col_exp:
     )
 
 with col_imp:
-    st.markdown("**⬆️ Importar planilha de orçamentos**")
+    st.markdown("**⬆️ Importar planilha(s) de orçamentos**")
     if _admin:
-        f_import = st.file_uploader(
-            "Arquivo exportado anteriormente (.xlsx)",
-            type=["xlsx"], key="import_orc",
+        arquivos_import = st.file_uploader(
+            "Arquivo(s) exportado(s) anteriormente (.xlsx)",
+            type=["xlsx"], key="import_orc", accept_multiple_files=True,
         )
-        if f_import and st.button("📥 Importar dados", type="primary", use_container_width=True):
+        if arquivos_import and st.button("📥 Importar dados", type="primary", use_container_width=True):
             try:
-                xl = pd.ExcelFile(io.BytesIO(f_import.read()))
-                importados = 0
-                if "Orcamentos" in xl.sheet_names:
-                    df_imp_orc = xl.parse("Orcamentos")
-                    for _, row in df_imp_orc.iterrows():
-                        proj = str(row.get("projeto","")).strip()
-                        if not proj: continue
-
-                        # Status do Projeto: se a planilha importada não trouxer
-                        # esta coluna (ou vier vazia), preserva o status já salvo
-                        # no banco em vez de sobrescrever com vazio/Nulo.
-                        status_imp = str(row.get("status_projeto","")).strip()
-                        if not status_imp or status_imp not in STATUS_OPCOES:
-                            existente = carregar_orcamento_projeto(proj)
-                            status_imp = (existente.get("status_projeto") if existente else None) or STATUS_DEFAULT
-
-                        salvar_orcamento(
-                            projeto               = proj,
-                            orcamento_previsto    = float(row.get("orcamento_previsto") or 0),
-                            status_projeto        = status_imp,
-                            data_inicio           = str(row.get("data_inicio","")) or None,
-                            prev_viabilidade      = str(row.get("prev_viabilidade","")) or None,
-                            prev_qualidade        = str(row.get("prev_qualidade","")) or None,
-                            prev_aprov_lancamento = str(row.get("prev_aprov_lancamento","")) or None,
-                            prev_lancamento       = str(row.get("prev_lancamento","")) or None,
-                            real_viabilidade      = str(row.get("real_viabilidade","")) or None,
-                            real_qualidade        = str(row.get("real_qualidade","")) or None,
-                            real_aprov_lancamento = str(row.get("real_aprov_lancamento","")) or None,
-                            real_lancamento       = str(row.get("real_lancamento","")) or None,
-                            nome_projeto_editado  = str(row.get("nome_projeto_editado","")) or None,
-                        )
-                        importados += 1
-                if "Previsoes" in xl.sheet_names:
-                    df_imp_prev = xl.parse("Previsoes")
-                    for _, row in df_imp_prev.iterrows():
-                        proj = str(row.get("projeto","")).strip()
-                        if not proj: continue
-                        salvar_previsao_periodo(
-                            projeto      = proj,
-                            periodo      = str(row.get("periodo","")).strip(),
-                            valor        = float(row.get("valor") or 0),
-                            tipo_periodo = str(row.get("tipo_periodo","anual")),
-                            descricao    = str(row.get("descricao","")) or None,
-                        )
+                importados = sum(
+                    importar_orcamento_de_excel(f_import.read())
+                    for f_import in arquivos_import
+                )
                 agregar_tudo.clear()
                 st.success(f"✅ {importados} projetos importados com sucesso!")
                 st.rerun()

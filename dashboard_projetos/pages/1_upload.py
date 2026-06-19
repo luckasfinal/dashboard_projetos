@@ -7,12 +7,10 @@ if str(_ROOT) not in sys.path:
 import streamlit as st
 import pandas as pd
 from utils.db import (
-    init_db, salvar_custos, salvar_horas,
-    listar_importacoes, deletar_importacao, limpar_tudo,
+    init_db, listar_importacoes, deletar_importacao, limpar_tudo,
 )
 from utils.data_processor import (
-    ler_planilha_bytes, preparar_custos, preparar_horas,
-    validar_colunas, COLUNAS_CUSTOS, COLUNAS_HORAS, agregar_tudo,
+    processar_arquivo_custos, processar_arquivo_horas, agregar_tudo,
 )
 from utils.auth import perfil_admin
 
@@ -84,56 +82,44 @@ st.divider()
 col_l, col_r = st.columns(2)
 with col_l:
     st.subheader("Planilha de Custos")
-    f_custos = st.file_uploader(
-        "Arquivo de custos", type=["xlsx", "xls", "csv"], key="up_custos",
-        disabled=not _admin,
+    arquivos_custos = st.file_uploader(
+        "Arquivo(s) de custos", type=["xlsx", "xls", "csv"], key="up_custos",
+        disabled=not _admin, accept_multiple_files=True,
     )
 with col_r:
     st.subheader("Planilha de Horas")
-    f_horas = st.file_uploader(
-        "Arquivo de horas", type=["xlsx", "xls", "csv"], key="up_horas",
-        disabled=not _admin,
+    arquivos_horas = st.file_uploader(
+        "Arquivo(s) de horas", type=["xlsx", "xls", "csv"], key="up_horas",
+        disabled=not _admin, accept_multiple_files=True,
     )
 
 st.divider()
 
 # ── Processar — só admin ──────────────────────────────────────────────────────
 if _admin:
-    if f_custos is not None or f_horas is not None:
+    if arquivos_custos or arquivos_horas:
         if st.button("💾 Importar e Salvar no Histórico", type="primary", use_container_width=True):
             avisos, sucessos = [], []
 
-            if f_custos:
-                bytes_c = f_custos.read()
-                df_c    = ler_planilha_bytes(bytes_c, f_custos.name)
-                df_c    = preparar_custos(df_c)
-                erros_c = validar_colunas(df_c, COLUNAS_CUSTOS, "Custos")
-                if erros_c:
-                    avisos += erros_c
-                    with st.expander("🔍 Colunas detectadas na planilha de custos"):
-                        st.write(list(df_c.columns))
+            for arquivo in arquivos_custos:
+                resultado = processar_arquivo_custos(arquivo)
+                if resultado["ok"]:
+                    sucessos.append(resultado["mensagem"])
                 else:
-                    linhas, dup = salvar_custos(df_c, f_custos.name)
-                    if dup:
-                        avisos.append(f"'{f_custos.name}' já foi importado — ignorado.")
-                    else:
-                        sucessos.append(f"Custos: **{linhas} linhas** de `{f_custos.name}` salvas.")
+                    avisos.append(resultado["mensagem"])
+                    if resultado["colunas"] is not None:
+                        with st.expander(f"🔍 Colunas detectadas em `{arquivo.name}`"):
+                            st.write(resultado["colunas"])
 
-            if f_horas:
-                bytes_h = f_horas.read()
-                df_h    = ler_planilha_bytes(bytes_h, f_horas.name)
-                df_h    = preparar_horas(df_h)
-                erros_h = validar_colunas(df_h, COLUNAS_HORAS, "Horas")
-                if erros_h:
-                    avisos += erros_h
-                    with st.expander("🔍 Colunas detectadas na planilha de horas"):
-                        st.write(list(df_h.columns))
+            for arquivo in arquivos_horas:
+                resultado = processar_arquivo_horas(arquivo)
+                if resultado["ok"]:
+                    sucessos.append(resultado["mensagem"])
                 else:
-                    linhas, dup = salvar_horas(df_h, f_horas.name)
-                    if dup:
-                        avisos.append(f"'{f_horas.name}' já foi importado — ignorado.")
-                    else:
-                        sucessos.append(f"Horas: **{linhas} linhas** de `{f_horas.name}` salvas.")
+                    avisos.append(resultado["mensagem"])
+                    if resultado["colunas"] is not None:
+                        with st.expander(f"🔍 Colunas detectadas em `{arquivo.name}`"):
+                            st.write(resultado["colunas"])
 
             for msg in sucessos: st.success(f"✅ {msg}")
             for msg in avisos:   st.warning(f"⚠️ {msg}")
