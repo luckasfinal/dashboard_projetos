@@ -431,3 +431,40 @@ def carregar_todas_previsoes() -> pd.DataFrame:
         return pd.read_sql(
             text("SELECT * FROM previsoes_periodo ORDER BY projeto, periodo"), con,
         )
+
+
+# ─────────────────────────────────────────────────────
+# Deleção em massa
+# ─────────────────────────────────────────────────────
+
+def deletar_projeto_completo(projeto: str) -> dict:
+    with _engine().begin() as con:
+        r_custos = con.execute(
+            text("DELETE FROM custos WHERE centro_de_custo = :p"), {"p": projeto}
+        ).rowcount
+        r_horas = con.execute(
+            text("DELETE FROM horas WHERE c_custo = :p"), {"p": projeto}
+        ).rowcount
+        r_orc = con.execute(
+            text("DELETE FROM orcamentos_cronograma WHERE projeto = :p"), {"p": projeto}
+        ).rowcount
+        con.execute(text("DELETE FROM previsoes_periodo WHERE projeto = :p"), {"p": projeto})
+        con.execute(text("""
+            DELETE FROM importacoes
+            WHERE tipo = 'custos'
+              AND arquivo NOT IN (SELECT DISTINCT arquivo FROM custos)
+        """))
+        con.execute(text("""
+            DELETE FROM importacoes
+            WHERE tipo = 'horas'
+              AND arquivo NOT IN (SELECT DISTINCT arquivo FROM horas)
+        """))
+    return {"custos": r_custos, "horas": r_horas, "orcamento": r_orc}
+
+
+def limpar_tudo() -> None:
+    with _engine().begin() as con:
+        con.execute(text("DELETE FROM custos"))
+        con.execute(text("DELETE FROM horas"))
+        con.execute(text("DELETE FROM importacoes"))
+        con.execute(text("DELETE FROM previsoes_periodo"))
