@@ -378,3 +378,56 @@ def deletar_orcamento_projeto(projeto: str) -> bool:
             {"projeto": projeto},
         )
         return resultado.rowcount > 0
+
+
+# ─────────────────────────────────────────────────────
+# Previsões por período
+# ─────────────────────────────────────────────────────
+
+def salvar_previsao_periodo(
+    projeto: str,
+    periodo: str,
+    valor: float,
+    tipo_periodo: str = "anual",
+    descricao: str | None = None,
+) -> None:
+    """Insere ou atualiza previsão orçamentária de um período."""
+    with _engine().begin() as con:
+        con.execute(text("""
+            INSERT INTO previsoes_periodo (projeto, periodo, tipo_periodo, descricao, valor, atualizado_em)
+            VALUES (:projeto, :periodo, :tipo_periodo, :descricao, :valor, :atualizado_em)
+            ON CONFLICT (projeto, periodo, tipo_periodo) DO UPDATE SET
+                descricao     = excluded.descricao,
+                valor         = excluded.valor,
+                atualizado_em = excluded.atualizado_em
+        """), {
+            "projeto": projeto,
+            "periodo": periodo,
+            "tipo_periodo": tipo_periodo,
+            "descricao": descricao,
+            "valor": valor,
+            "atualizado_em": _agora(),
+        })
+
+
+def deletar_previsao_periodo(id_previsao: int) -> None:
+    with _engine().begin() as con:
+        con.execute(text("DELETE FROM previsoes_periodo WHERE id = :id"), {"id": id_previsao})
+
+
+def carregar_previsoes_projeto(projeto: str) -> pd.DataFrame:
+    with _engine().connect() as con:
+        return pd.read_sql(
+            text(
+                "SELECT * FROM previsoes_periodo WHERE projeto = :projeto "
+                "ORDER BY periodo, tipo_periodo"
+            ),
+            con, params={"projeto": projeto},
+        )
+
+
+def carregar_todas_previsoes() -> pd.DataFrame:
+    with _engine().connect() as con:
+        return pd.read_sql(
+            text("SELECT * FROM previsoes_periodo ORDER BY projeto, periodo"), con,
+        )
