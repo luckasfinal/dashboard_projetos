@@ -190,7 +190,9 @@ def _tabela_marcos_html(row) -> str:
 # ═══════════════════════════════════════════════════════════════════
 # TABS
 # ═══════════════════════════════════════════════════════════════════
-tab_resumo, tab_detalhe = st.tabs(["📊 Resumo Geral", "🔍 Detalhamento"])
+# Navegação vinda de outra página (ex: Visão Executiva → "Ver detalhamento")
+_tab_alvo = st.session_state.pop("ir_para_tab", None)
+tab_resumo, tab_detalhe = st.tabs(["📊 Resumo Geral", "🔍 Detalhamento"], default=_tab_alvo)
 
 # ───────────────────────────────────────────────────────────────────
 # TAB 1 — RESUMO GERAL (conciso, sem gauges)
@@ -392,9 +394,24 @@ with tab_detalhe:
 
     proj_opcoes = df_grp["nome_projeto"].tolist()
 
+    # Navegação vinda de outra página (ex: Visão Executiva → "Ver detalhamento").
+    # Define o valor em session_state ANTES do widget ser instanciado — um
+    # selectbox sem isso ignora `index=` quando o usuário já interagiu com
+    # ele antes (Streamlit mantém o valor anterior, não o index recalculado).
+    _cc_alvo = st.session_state.pop("ir_para_projeto", None)
+    if _cc_alvo:
+        for _ccs, _nome in zip(df_grp["projeto"], df_grp["nome_projeto"]):
+            if _cc_alvo in [c.strip() for c in str(_ccs).split(",")]:
+                st.session_state["projeto_detalhe_selecionado"] = _nome
+                break
+
+    if st.session_state.get("projeto_detalhe_selecionado") not in proj_opcoes:
+        st.session_state.pop("projeto_detalhe_selecionado", None)
+
     projeto_detalhe = st.selectbox(
         "Selecione um projeto:",
         options=proj_opcoes,
+        key="projeto_detalhe_selecionado",
     )
 
     row = df_grp[df_grp["nome_projeto"] == projeto_detalhe].iloc[0]

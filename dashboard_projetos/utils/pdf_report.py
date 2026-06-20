@@ -12,6 +12,7 @@ Usa reportlab (Platypus). Retorna bytes prontos para st.download_button.
 import io
 from datetime import datetime
 
+import pandas as pd
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import mm
@@ -231,6 +232,137 @@ def gerar_relatorio_pdf(
             pass
     proj_tbl.setStyle(TableStyle(estilo_proj))
     story.append(proj_tbl)
+
+    story.append(Spacer(1, 14))
+    story.append(Paragraph(
+        "Relatório gerado automaticamente pelo Dashboard de Projetos. "
+        "Valores baseados nos dados importados até a data de geração.",
+        est["rodape"]
+    ))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def gerar_relatorio_risco_pdf(df_risco, filtros: dict) -> bytes:
+    """
+    Gera o PDF da Visão Executiva (risco de portfólio) e retorna os bytes.
+
+    df_risco: saída de calcular_risco_portfolio (uma linha por projeto,
+              colunas: projeto, nome_projeto, nivel_risco, motivos,
+              pct_projetado, dias_atraso_max, orcamento, realizado,
+              proxima_fase, proxima_fase_data)
+    filtros: dict com os filtros aplicados (para registrar no cabeçalho)
+    """
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=15 * mm, rightMargin=15 * mm,
+        topMargin=14 * mm, bottomMargin=14 * mm,
+        title="Relatório de Visão Executiva",
+    )
+    est = _estilos()
+    story = []
+
+    story.append(Paragraph("Visão Executiva — Risco de Portfólio", est["titulo"]))
+    agora = datetime.now().strftime("%d/%m/%Y às %H:%M")
+    story.append(Paragraph(f"Gerado em {agora}", est["subtitulo"]))
+
+    partes_filtro = []
+    for chave, valores in filtros.items():
+        if valores and isinstance(valores, (list, tuple)):
+            if len(valores) <= 4:
+                partes_filtro.append(f"<b>{chave}:</b> {', '.join(map(str, valores))}")
+            else:
+                partes_filtro.append(f"<b>{chave}:</b> {len(valores)} selecionados")
+    if partes_filtro:
+        story.append(Paragraph(" &nbsp;·&nbsp; ".join(partes_filtro), est["normal"]))
+    story.append(Spacer(1, 8))
+
+    n_alto  = int((df_risco["nivel_risco"] == "alto").sum())
+    n_medio = int((df_risco["nivel_risco"] == "medio").sum())
+    n_baixo = int((df_risco["nivel_risco"] == "baixo").sum())
+
+    kpi_data = [
+        ["Alto risco", "Risco médio", "Baixo risco"],
+        [str(n_alto), str(n_medio), str(n_baixo)],
+    ]
+    kpi_tbl = Table(kpi_data, colWidths=[50 * mm] * 3)
+    kpi_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), AZUL),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("BACKGROUND", (0, 1), (-1, 1), CINZA_CLARO),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.white),
+    ]))
+    story.append(kpi_tbl)
+    story.append(Spacer(1, 12))
+
+    story.append(Paragraph("Projetos em Risco (Alto / Médio)", est["secao"]))
+    destaque = df_risco[df_risco["nivel_risco"].isin(["alto", "medio"])]
+
+    if destaque.empty:
+        story.append(Paragraph(
+            "Nenhum projeto em risco alto ou médio nos filtros selecionados.",
+            est["normal"]
+        ))
+    else:
+        cab = ["Projeto", "Risco", "Orçamento", "% Projetado", "Realizado", "Próxima Fase", "Motivos"]
+        risco_data = [cab]
+        for _, row in destaque.iterrows():
+            nome = str(row.get("nome_projeto", row.get("projeto", "—")))
+            risco_label = "Alto" if row["nivel_risco"] == "alto" else "Médio"
+            orcamento = _fmt_brl(row.get("orcamento", 0))
+            pct = row.get("pct_projetado")
+            pct_str = f"{pct:.0f}%" if pd.notna(pct) else "—"
+            realizado = _fmt_brl(row.get("realizado", 0))
+            if pd.notna(row.get("proxima_fase")):
+                fase_str = f"{row['proxima_fase']} ({row['proxima_fase_data'].strftime('%d/%m/%Y')})"
+            else:
+                fase_str = "Concluído"
+            motivos_str = "; ".join(row.get("motivos") or []) or "—"
+            risco_data.append([
+                Paragraph(nome, est["normal"]),
+                risco_label,
+                orcamento,
+                pct_str,
+                realizado,
+                Paragraph(fase_str, est["normal"]),
+                Paragraph(motivos_str, est["normal"]),
+            ])
+
+        larguras = [42 * mm, 16 * mm, 28 * mm, 22 * mm, 28 * mm, 38 * mm, 93 * mm]
+        risco_tbl = Table(risco_data, colWidths=larguras, repeatRows=1)
+        estilo_risco = [
+            ("BACKGROUND", (0, 0), (-1, 0), AZUL),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, CINZA_CLARO]),
+        ]
+        for i, row in enumerate(destaque["nivel_risco"].tolist(), start=1):
+            if row == "alto":
+                estilo_risco.append(("TEXTCOLOR", (1, i), (1, i), VERMELHO))
+                estilo_risco.append(("FONTNAME", (1, i), (1, i), "Helvetica-Bold"))
+        risco_tbl.setStyle(TableStyle(estilo_risco))
+        story.append(risco_tbl)
+
+    story.append(Spacer(1, 10))
+    story.append(Paragraph(
+        f"{n_baixo} projeto(s) em baixo risco não detalhados aqui — ver exportação CSV para a lista completa.",
+        est["normal"]
+    ))
 
     story.append(Spacer(1, 14))
     story.append(Paragraph(
