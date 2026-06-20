@@ -342,6 +342,63 @@ def aplicar_filtros(
     return df_f
 
 
+def render_filtros_sidebar(df: pd.DataFrame, df_custos_raw: pd.DataFrame) -> pd.DataFrame:
+    """Renderiza os 4 filtros (Projetos, Ano, Mês, Status) na sidebar e
+    retorna o df já filtrado. Usa st.session_state para persistir as
+    escolhas entre as páginas Dashboard e Andamento dos Projetos (mesmas
+    chaves). Seleção vazia em qualquer filtro = sem filtro (mostra tudo).
+    """
+    lista_projetos = sorted(df["nome_projeto"].dropna().unique().tolist())
+    lista_anos     = sorted(df_custos_raw["ano"].dropna().astype(str).unique().tolist()) if "ano" in df_custos_raw.columns else []
+    lista_meses    = sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolist()) if "mes" in df_custos_raw.columns else []
+    lista_status   = sorted(df["status_projeto"].dropna().unique().tolist()) if "status_projeto" in df.columns else []
+
+    if "filtro_projetos" not in st.session_state: st.session_state["filtro_projetos"] = []
+    if "filtro_anos"     not in st.session_state: st.session_state["filtro_anos"]     = anos_default(lista_anos)
+    if "filtro_meses"    not in st.session_state: st.session_state["filtro_meses"]    = []
+    if "filtro_status"   not in st.session_state: st.session_state["filtro_status"]   = status_ativos(lista_status)
+
+    st.session_state["filtro_projetos"] = [p for p in st.session_state["filtro_projetos"] if p in lista_projetos]
+    st.session_state["filtro_anos"]     = [a for a in st.session_state["filtro_anos"]     if a in lista_anos]
+    st.session_state["filtro_meses"]    = [m for m in st.session_state["filtro_meses"]    if m in lista_meses]
+    st.session_state["filtro_status"]   = [s for s in st.session_state["filtro_status"]   if s in lista_status]
+
+    with st.sidebar:
+        st.header("🔍 Filtros")
+
+        projetos_selecionados = st.multiselect("Projetos:", options=lista_projetos,
+            default=st.session_state["filtro_projetos"], key="filtro_projetos")
+        st.caption(f"{len(projetos_selecionados)} de {len(lista_projetos)} selecionados"
+                   if projetos_selecionados else f"Mostrando todos os {len(lista_projetos)} projetos")
+
+        anos_selecionados = st.multiselect("Ano:", options=lista_anos,
+            default=st.session_state["filtro_anos"], key="filtro_anos")
+        st.caption(f"{len(anos_selecionados)} de {len(lista_anos)} selecionados"
+                   if anos_selecionados else f"Mostrando todos os {len(lista_anos)} anos")
+
+        meses_selecionados = st.multiselect("Mês:", options=lista_meses,
+            default=st.session_state["filtro_meses"], key="filtro_meses")
+        st.caption(f"{len(meses_selecionados)} de {len(lista_meses)} selecionados"
+                   if meses_selecionados else f"Mostrando todos os {len(lista_meses)} meses")
+
+        status_selecionados = st.multiselect("Status do Projeto:", options=lista_status,
+            default=st.session_state["filtro_status"], key="filtro_status")
+        st.caption(f"{len(status_selecionados)} de {len(lista_status)} selecionados"
+                   if status_selecionados else f"Mostrando todos os {len(lista_status)} status")
+
+        if st.button("🔄 Limpar filtros", use_container_width=True):
+            st.session_state["filtro_projetos"] = []
+            st.session_state["filtro_anos"]     = []
+            st.session_state["filtro_meses"]    = []
+            st.session_state["filtro_status"]   = []
+            st.rerun()
+
+    return aplicar_filtros(
+        df, df_custos_raw,
+        projetos_selecionados, anos_selecionados, meses_selecionados, status_selecionados,
+    )
+
+
 # ─────────────────────────────────────────────
 # Agregação completa (lê do banco)
 # ─────────────────────────────────────────────

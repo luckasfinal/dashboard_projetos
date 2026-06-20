@@ -10,7 +10,7 @@ from utils.db import init_db
 from utils.data_processor import (
     agregar_tudo, formata_brl, formata_brl_curto, cor_status, cor_status_projeto,
     render_selo_dados, aviso_truncamento, detectar_excecoes,
-    status_ativos, anos_default,
+    render_filtros_sidebar,
 )
 from utils.pdf_report import gerar_relatorio_pdf
 from utils import charts
@@ -45,51 +45,8 @@ if df_dashboard.empty:
     st.warning("⚠️ Nenhum dado encontrado. Acesse **Upload de Planilhas** e importe seus arquivos.")
     st.stop()
 
-# ── Filtros persistentes ──────────────────────────────────────────────────────
-lista_projetos = sorted(df_dashboard["nome_projeto"].dropna().unique().tolist())
-lista_anos     = sorted(df_custos_raw["ano"].dropna().astype(str).unique().tolist()) if "ano" in df_custos_raw.columns else []
-lista_meses    = sorted(df_custos_raw["mes"].dropna().astype(str).unique().tolist()) if "mes" in df_custos_raw.columns else []
-lista_status   = sorted(df_dashboard["status_projeto"].dropna().unique().tolist()) if "status_projeto" in df_dashboard.columns else []
-
-if "filtro_projetos" not in st.session_state: st.session_state["filtro_projetos"] = lista_projetos
-if "filtro_anos"     not in st.session_state: st.session_state["filtro_anos"]     = anos_default(lista_anos)
-if "filtro_meses"    not in st.session_state: st.session_state["filtro_meses"]    = lista_meses
-if "filtro_status"   not in st.session_state: st.session_state["filtro_status"]   = status_ativos(lista_status)
-
-st.session_state["filtro_projetos"] = [p for p in st.session_state["filtro_projetos"] if p in lista_projetos]
-st.session_state["filtro_anos"]     = [a for a in st.session_state["filtro_anos"]     if a in lista_anos]
-st.session_state["filtro_meses"]    = [m for m in st.session_state["filtro_meses"]    if m in lista_meses]
-st.session_state["filtro_status"]   = [s for s in st.session_state["filtro_status"]   if s in lista_status]
-
-with st.sidebar:
-    st.header("🔍 Filtros")
-    projetos_selecionados = st.multiselect("Projetos:", options=lista_projetos,
-        default=st.session_state["filtro_projetos"], key="filtro_projetos")
-    anos_selecionados = st.multiselect("Ano:", options=lista_anos,
-        default=st.session_state["filtro_anos"], key="filtro_anos")
-    meses_selecionados = st.multiselect("Mês:", options=lista_meses,
-        default=st.session_state["filtro_meses"], key="filtro_meses")
-    status_selecionados = st.multiselect("Status do Projeto:", options=lista_status,
-        default=st.session_state["filtro_status"], key="filtro_status")
-    if st.button("🔄 Limpar filtros", use_container_width=True):
-        st.session_state["filtro_projetos"] = lista_projetos
-        st.session_state["filtro_anos"]     = lista_anos
-        st.session_state["filtro_meses"]    = lista_meses
-        st.session_state["filtro_status"]   = lista_status
-        st.rerun()
-
 # ── Filtros ───────────────────────────────────────────────────────────────────
-df_f = df_dashboard.copy()
-if projetos_selecionados:
-    df_f = df_f[df_f["nome_projeto"].isin(projetos_selecionados)]
-if anos_selecionados and "ano" in df_custos_raw.columns:
-    cc_anos = df_custos_raw[df_custos_raw["ano"].astype(str).isin(anos_selecionados)]["centro_de_custo"].unique()
-    df_f = df_f[df_f["projeto"].isin(cc_anos)]
-if meses_selecionados and "mes" in df_custos_raw.columns:
-    cc_meses = df_custos_raw[df_custos_raw["mes"].astype(str).isin(meses_selecionados)]["centro_de_custo"].unique()
-    df_f = df_f[df_f["projeto"].isin(cc_meses)]
-if status_selecionados and "status_projeto" in df_f.columns:
-    df_f = df_f[df_f["status_projeto"].isin(status_selecionados)]
+df_f = render_filtros_sidebar(df_dashboard, df_custos_raw)
 
 df_c_f  = df_custos_raw[df_custos_raw["centro_de_custo"].isin(df_f["projeto"])] if not df_custos_raw.empty else df_custos_raw
 df_h_f  = df_horas_raw[df_horas_raw["c_custo"].isin(df_f["projeto"])]           if not df_horas_raw.empty else df_horas_raw
@@ -234,10 +191,10 @@ col_csv.download_button("⬇️ Exportar CSV", csv, "resumo_projetos.csv", "text
 
 # ── 5.2 — Exportar visão atual em PDF ─────────────────────────────────────────
 filtros_aplicados = {
-    "Projetos": projetos_selecionados if projetos_selecionados != lista_projetos else [],
-    "Ano": anos_selecionados,
-    "Mês": meses_selecionados if meses_selecionados != lista_meses else [],
-    "Status": status_selecionados if status_selecionados != lista_status else [],
+    "Projetos": st.session_state.get("filtro_projetos", []),
+    "Ano": st.session_state.get("filtro_anos", []),
+    "Mês": st.session_state.get("filtro_meses", []),
+    "Status": st.session_state.get("filtro_status", []),
 }
 filtros_aplicados = {k: v for k, v in filtros_aplicados.items() if v}
 try:
