@@ -1,3 +1,4 @@
+import html
 import sys
 from pathlib import Path
 _ROOT = Path(__file__).parent.parent.resolve()
@@ -15,7 +16,7 @@ init_db()
 st.title("🧭 Visão Executiva")
 st.caption("Quais projetos precisam de atenção agora — risco combinado de custo e prazo.")
 
-df_dashboard, df_custos_raw, df_horas_raw = agregar_tudo()
+df_dashboard, df_custos_raw, _df_horas_raw = agregar_tudo()
 
 if df_dashboard.empty:
     st.warning("⚠️ Nenhum dado encontrado. Acesse **Upload de Planilhas** e importe seus arquivos.")
@@ -58,7 +59,7 @@ else:
         st.markdown(f"""
         <div style="background:{cor}22;border-left:4px solid {cor};border-radius:8px;
                     padding:12px 16px;margin-bottom:10px">
-            <div style="font-weight:700">{icone} {r['nome_projeto']} — {label}</div>
+            <div style="font-weight:700">{icone} {html.escape(str(r['nome_projeto']))} — {label}</div>
             <div style="opacity:.85;margin-top:4px;font-size:13px">
                 Orçamento: {formata_brl(r['orcamento'])} · {pct_txt}
             </div>
