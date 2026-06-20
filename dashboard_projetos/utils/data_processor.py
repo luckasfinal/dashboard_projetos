@@ -1054,7 +1054,10 @@ def calcular_risco_portfolio(df: pd.DataFrame, df_custos_raw: pd.DataFrame) -> p
     """
     from datetime import datetime as _dt
 
-    colunas = ["projeto", "nome_projeto", "nivel_risco", "motivos", "pct_projetado", "dias_atraso_max", "orcamento"]
+    colunas = [
+        "projeto", "nome_projeto", "nivel_risco", "motivos", "pct_projetado",
+        "dias_atraso_max", "orcamento", "realizado", "proxima_fase", "proxima_fase_data",
+    ]
     if df is None or df.empty:
         return pd.DataFrame(columns=colunas)
 
@@ -1073,6 +1076,7 @@ def calcular_risco_portfolio(df: pd.DataFrame, df_custos_raw: pd.DataFrame) -> p
             df_c_proj = pd.DataFrame()
         proj_burn = projecao_burn_rate(row, df_c_proj)
         pct = proj_burn["pct_projetado"]
+        realizado = proj_burn["realizado"]
 
         if pct is None:
             risco_custo = "indeterminado"
@@ -1087,11 +1091,16 @@ def calcular_risco_portfolio(df: pd.DataFrame, df_custos_raw: pd.DataFrame) -> p
             risco_custo = "baixo"
 
         dias_atraso_max = 0
+        proxima_fase = None
+        proxima_fase_data = None
         for col_prev, col_real, label in MARCOS_RISCO:
             prev_d = _parse_data_marco(row.get(col_prev))
+            real_d = _parse_data_marco(row.get(col_real))
+            if proxima_fase is None and real_d is None and prev_d is not None:
+                proxima_fase = label
+                proxima_fase_data = prev_d
             if prev_d is None:
                 continue
-            real_d = _parse_data_marco(row.get(col_real))
             ref = real_d if real_d else hoje
             if ref > prev_d:
                 dias = (ref - prev_d).days
@@ -1113,6 +1122,9 @@ def calcular_risco_portfolio(df: pd.DataFrame, df_custos_raw: pd.DataFrame) -> p
             "pct_projetado": pct,
             "dias_atraso_max": dias_atraso_max,
             "orcamento": orcamento,
+            "realizado": realizado,
+            "proxima_fase": proxima_fase,
+            "proxima_fase_data": proxima_fase_data,
         })
 
     resultado = pd.DataFrame(linhas, columns=colunas)

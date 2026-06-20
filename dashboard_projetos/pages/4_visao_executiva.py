@@ -1,5 +1,6 @@
 import html
 import sys
+from datetime import date
 from pathlib import Path
 _ROOT = Path(__file__).parent.parent.resolve()
 if str(_ROOT) not in sys.path:
@@ -50,12 +51,18 @@ destaque = risco[risco["nivel_risco"].isin(["alto", "medio"])]
 if destaque.empty:
     st.success("✅ Nenhum projeto em risco alto ou médio nos filtros selecionados.")
 else:
+    hoje_txt = date.today().strftime("%d/%m/%Y")
     for _, r in destaque.iterrows():
         cor    = CORES_RISCO[r["nivel_risco"]]
         icone  = ICONES_RISCO[r["nivel_risco"]]
         label  = LABEL_RISCO[r["nivel_risco"]]
         motivos_html = "<br>".join(r["motivos"]) if r["motivos"] else "—"
         pct_txt = f"{r['pct_projetado']:.0f}% do orçamento projetado" if r["pct_projetado"] is not None else "Projeção indisponível"
+        realizado_txt = f"Orçamento realizado até {hoje_txt}: {formata_brl(r['realizado'])}"
+        if r["proxima_fase"]:
+            fase_txt = f"Próxima fase: {r['proxima_fase']} programada para {r['proxima_fase_data'].strftime('%d/%m/%Y')}"
+        else:
+            fase_txt = "Todas as fases do cronograma já concluídas"
         st.markdown(f"""
         <div style="background:{cor}22;border-left:4px solid {cor};border-radius:8px;
                     padding:12px 16px;margin-bottom:10px">
@@ -63,6 +70,7 @@ else:
             <div style="opacity:.85;margin-top:4px;font-size:13px">
                 Orçamento: {formata_brl(r['orcamento'])} · {pct_txt}
             </div>
+            <div style="opacity:.85;margin-top:4px;font-size:13px">{realizado_txt} · {fase_txt}</div>
             <div style="opacity:.85;margin-top:6px;font-size:14px">{motivos_html}</div>
         </div>
         """, unsafe_allow_html=True)

@@ -101,6 +101,37 @@ def test_projeto_sem_orcamento_e_baixo_risco_com_motivo_informativo():
     assert "Sem orçamento cadastrado" in risco.iloc[0]["motivos"]
 
 
+def test_inclui_realizado_e_proxima_fase_pendente():
+    df = pd.DataFrame([_linha_projeto(
+        "P006", "Projeto Em Andamento", 4000, 10000,
+        prev_viabilidade=_data(-40), real_viabilidade=_data(-42),
+        prev_qualidade=_data(15),
+    )])
+    df_custos_raw = pd.DataFrame(columns=["centro_de_custo", "mes_ref", "realizado"])
+
+    risco = calcular_risco_portfolio(df, df_custos_raw)
+
+    assert risco.iloc[0]["realizado"] == 4000
+    assert risco.iloc[0]["proxima_fase"] == "Qualidade"
+    assert risco.iloc[0]["proxima_fase_data"] == date.today() + timedelta(days=15)
+
+
+def test_proxima_fase_e_none_quando_todas_as_fases_concluidas():
+    df = pd.DataFrame([_linha_projeto(
+        "P007", "Projeto Concluído", 9000, 10000,
+        prev_viabilidade=_data(-90), real_viabilidade=_data(-90),
+        prev_qualidade=_data(-60), real_qualidade=_data(-60),
+        prev_aprov_lancamento=_data(-30), real_aprov_lancamento=_data(-30),
+        prev_lancamento=_data(-10), real_lancamento=_data(-10),
+    )])
+    df_custos_raw = pd.DataFrame(columns=["centro_de_custo", "mes_ref", "realizado"])
+
+    risco = calcular_risco_portfolio(df, df_custos_raw)
+
+    assert risco.iloc[0]["proxima_fase"] is None
+    assert risco.iloc[0]["proxima_fase_data"] is None
+
+
 def test_ordena_por_nivel_de_risco_alto_primeiro():
     df = pd.DataFrame([
         _linha_projeto("P010", "Baixo", 1000, 10000),
