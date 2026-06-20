@@ -342,6 +342,18 @@ def aplicar_filtros(
     return df_f
 
 
+def _limpar_filtros_callback() -> None:
+    """Callback do botão 'Limpar filtros'. Precisa rodar via on_click (antes do
+    rerun recriar os widgets) — atribuir a st.session_state[key] depois que o
+    widget com aquele key já foi instanciado no mesmo run lança
+    StreamlitAPIException.
+    """
+    st.session_state["filtro_projetos"] = []
+    st.session_state["filtro_anos"]     = []
+    st.session_state["filtro_meses"]    = []
+    st.session_state["filtro_status"]   = []
+
+
 def render_filtros_sidebar(df: pd.DataFrame, df_custos_raw: pd.DataFrame) -> pd.DataFrame:
     """Renderiza os 4 filtros (Projetos, Ano, Mês, Status) na sidebar e
     retorna o df já filtrado. Usa st.session_state para persistir as
@@ -386,12 +398,7 @@ def render_filtros_sidebar(df: pd.DataFrame, df_custos_raw: pd.DataFrame) -> pd.
         st.caption(f"{len(status_selecionados)} de {len(lista_status)} selecionados"
                    if status_selecionados else f"Mostrando todos os {len(lista_status)} status")
 
-        if st.button("🔄 Limpar filtros", use_container_width=True):
-            st.session_state["filtro_projetos"] = []
-            st.session_state["filtro_anos"]     = []
-            st.session_state["filtro_meses"]    = []
-            st.session_state["filtro_status"]   = []
-            st.rerun()
+        st.button("🔄 Limpar filtros", use_container_width=True, on_click=_limpar_filtros_callback)
 
     return aplicar_filtros(
         df, df_custos_raw,
