@@ -1029,6 +1029,101 @@ def projecao_burn_rate(row, df_custos_proj: pd.DataFrame) -> dict:
     return base
 
 
+MARCOS_RISCO = [
+    ("prev_viabilidade", "real_viabilidade", "Viabilidade"),
+    ("prev_qualidade", "real_qualidade", "Qualidade"),
+    ("prev_aprov_lancamento", "real_aprov_lancamento", "Aprovação para Lançamento"),
+    ("prev_lancamento", "real_lancamento", "Lançamento"),
+]
+
+
+def _parse_data_marco(val):
+    from datetime import datetime as _dt
+    if not val or str(val) in ("0", "None", "nan", ""):
+        return None
+    try:
+        return _dt.strptime(str(val)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def calcular_risco_portfolio(df: pd.DataFrame, df_custos_raw: pd.DataFrame) -> pd.DataFrame:
+    """Classifica cada projeto em nivel_risco ('alto'/'medio'/'baixo'), combinando
+    a projeção de custo (projecao_burn_rate) com atraso em qualquer marco do
+    cronograma. Retorna um DataFrame ordenado por risco (alto primeiro).
+    """
+    from datetime import datetime as _dt
+
+    colunas = ["projeto", "nome_projeto", "nivel_risco", "motivos", "pct_projetado", "dias_atraso_max", "orcamento"]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=colunas)
+
+    hoje = _dt.today().date()
+    linhas = []
+
+    for _, row in df.iterrows():
+        projeto = row.get("projeto")
+        nome_projeto = row.get("nome_projeto", projeto)
+        orcamento = row.get("orcamento", 0) or 0
+        motivos = []
+
+        if df_custos_raw is not None and not df_custos_raw.empty and "centro_de_custo" in df_custos_raw.columns:
+            df_c_proj = df_custos_raw[df_custos_raw["centro_de_custo"] == projeto]
+        else:
+            df_c_proj = pd.DataFrame()
+        proj_burn = projecao_burn_rate(row, df_c_proj)
+        pct = proj_burn["pct_projetado"]
+
+        if pct is None:
+            risco_custo = "indeterminado"
+            motivos.append("Sem orçamento cadastrado")
+        elif pct > 100:
+            risco_custo = "alto"
+            motivos.append(f"Projeção de custo: {pct:.0f}% do orçamento")
+        elif pct >= 80:
+            risco_custo = "medio"
+            motivos.append(f"Projeção de custo: {pct:.0f}% do orçamento")
+        else:
+            risco_custo = "baixo"
+
+        dias_atraso_max = 0
+        for col_prev, col_real, label in MARCOS_RISCO:
+            prev_d = _parse_data_marco(row.get(col_prev))
+            if prev_d is None:
+                continue
+            real_d = _parse_data_marco(row.get(col_real))
+            ref = real_d if real_d else hoje
+            if ref > prev_d:
+                dias = (ref - prev_d).days
+                motivos.append(f"{label} atrasado(a) {dias} dia(s)")
+                dias_atraso_max = max(dias_atraso_max, dias)
+
+        if risco_custo == "alto" or dias_atraso_max > 0:
+            nivel_risco = "alto"
+        elif risco_custo == "medio":
+            nivel_risco = "medio"
+        else:
+            nivel_risco = "baixo"
+
+        linhas.append({
+            "projeto": projeto,
+            "nome_projeto": nome_projeto,
+            "nivel_risco": nivel_risco,
+            "motivos": motivos,
+            "pct_projetado": pct,
+            "dias_atraso_max": dias_atraso_max,
+            "orcamento": orcamento,
+        })
+
+    resultado = pd.DataFrame(linhas, columns=colunas)
+    ordem = {"alto": 0, "medio": 1, "baixo": 2}
+    resultado["_ordem"] = resultado["nivel_risco"].map(ordem)
+    resultado = resultado.sort_values(
+        ["_ordem", "pct_projetado"], ascending=[True, False], na_position="last"
+    ).drop(columns="_ordem").reset_index(drop=True)
+    return resultado
+
+
 # ─────────────────────────────────────────────
 # Defaults de filtros curados (Roadmap 4.2)
 # ─────────────────────────────────────────────
