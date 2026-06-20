@@ -1104,7 +1104,7 @@ def calcular_risco_portfolio(df: pd.DataFrame, df_custos_raw: pd.DataFrame) -> p
             ref = real_d if real_d else hoje
             if ref > prev_d:
                 dias = (ref - prev_d).days
-                motivos.append(f"{label} atrasado(a) {dias} dia(s)")
+                motivos.append(f'"{label}" aprovado(a) em atraso de {dias} dia(s)')
                 dias_atraso_max = max(dias_atraso_max, dias)
 
         if risco_custo == "alto" or dias_atraso_max > 0:

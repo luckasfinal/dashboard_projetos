@@ -87,7 +87,7 @@ def test_marco_atrasado_classifica_como_alto_mesmo_com_custo_saudavel():
 
     assert risco.iloc[0]["nivel_risco"] == "alto"
     assert risco.iloc[0]["dias_atraso_max"] == 10
-    assert any("Qualidade" in m and "10" in m for m in risco.iloc[0]["motivos"])
+    assert '"Qualidade" aprovado(a) em atraso de 10 dia(s)' in risco.iloc[0]["motivos"]
 
 
 def test_projeto_sem_orcamento_e_baixo_risco_com_motivo_informativo():
