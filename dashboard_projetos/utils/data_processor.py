@@ -958,6 +958,8 @@ def projecao_burn_rate(row, df_custos_proj: pd.DataFrame) -> dict:
     """
     from datetime import datetime as _dt
 
+    from datetime import timedelta
+
     realizado = float(row.get("valor_total", 0) or 0)
     orcamento = float(row.get("orcamento", 0) or 0)
 
@@ -971,6 +973,8 @@ def projecao_burn_rate(row, df_custos_proj: pd.DataFrame) -> dict:
         "pct_projetado": (realizado / orcamento * 100) if orcamento > 0 else None,
         "vai_estourar": (realizado > orcamento) if orcamento > 0 else False,
         "status": "sem_dados",
+        "dias_atraso_confirmado": 0,
+        "data_conclusao_estimada": None,
     }
 
     if df_custos_proj is None or df_custos_proj.empty or "mes_ref" not in df_custos_proj.columns:
@@ -992,7 +996,6 @@ def projecao_burn_rate(row, df_custos_proj: pd.DataFrame) -> dict:
     base["ritmo_mensal"] = ritmo
     base["meses_decorridos"] = n_meses
 
-    # Meses restantes até o lançamento previsto
     def _parse(val):
         if not val or str(val) in ("0", "None", "nan", ""):
             return None
@@ -1013,9 +1016,37 @@ def projecao_burn_rate(row, df_custos_proj: pd.DataFrame) -> dict:
         base["vai_estourar"] = (realizado > orcamento) if orcamento > 0 else False
         return base
 
+    # Atraso confirmado: maior atraso observado em qualquer marco (mesmo lógica do risco)
+    _MARCOS_BURN = [
+        ("prev_viabilidade",     "real_viabilidade"),
+        ("prev_qualidade",       "real_qualidade"),
+        ("prev_aprov_lancamento","real_aprov_lancamento"),
+        ("prev_lancamento",      "real_lancamento"),
+    ]
+    dias_atraso = 0
+    for col_prev, col_real in _MARCOS_BURN:
+        prev_m = _parse(row.get(col_prev))
+        real_m = _parse(row.get(col_real))
+        if prev_m is None:
+            continue
+        ref = real_m if real_m else hoje
+        if ref > prev_m:
+            dias_atraso = max(dias_atraso, (ref - prev_m).days)
+
+    base["dias_atraso_confirmado"] = dias_atraso
+
+    # Data de conclusão estimada = lançamento previsto + atraso confirmado
+    data_conclusao = None
+    if prev_lanc is not None:
+        data_conclusao = prev_lanc + timedelta(days=dias_atraso)
+        base["data_conclusao_estimada"] = data_conclusao
+
     meses_restantes = 0
-    if prev_lanc is not None and prev_lanc > hoje:
-        meses_restantes = (prev_lanc.year - hoje.year) * 12 + (prev_lanc.month - hoje.month)
+    if data_conclusao is not None and data_conclusao > hoje:
+        meses_restantes = (
+            (data_conclusao.year - hoje.year) * 12
+            + (data_conclusao.month - hoje.month)
+        )
         meses_restantes = max(meses_restantes, 0)
 
     base["meses_restantes"] = meses_restantes

@@ -118,6 +118,14 @@ def _protege_numero(novo: float, antigo: float) -> tuple[float, bool]:
         return antigo, True
     return novo, False
 
+def _fmt_data_curta(val) -> str:
+    if not val or str(val) in ("0", "None", "nan", ""):
+        return "—"
+    try:
+        return datetime.strptime(str(val)[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:
+        return str(val)
+
 orcamento_atual      = float(dados["orcamento_previsto"]) if dados and dados.get("orcamento_previsto") else 0.0
 orc_tem_dado         = bool(dados and dados.get("orcamento_previsto") and float(dados["orcamento_previsto"]) > 0)
 nome_editado_salvo   = (dados.get("nome_projeto_editado") or "") if dados else ""
@@ -300,6 +308,59 @@ if botao_salvar and _admin:
         st.rerun()
     except Exception as e:
         st.error(f"❌ Erro ao salvar: {e}")
+
+# ── 5B. Limpar datas de marco individualmente (admin) ────────────────────────
+_CAMPOS_DATAS = {
+    "data_inicio":           "Início do Projeto",
+    "prev_viabilidade":      "Prev. Viabilidade",
+    "real_viabilidade":      "Real. Viabilidade",
+    "prev_qualidade":        "Prev. Qualidade",
+    "real_qualidade":        "Real. Qualidade",
+    "prev_aprov_lancamento": "Prev. Aprov. Lançamento",
+    "real_aprov_lancamento": "Real. Aprov. Lançamento",
+    "prev_lancamento":       "Prev. Lançamento",
+    "real_lancamento":       "Real. Lançamento",
+}
+
+if _admin and dados:
+    with st.expander("🗑️ Limpar datas de marco"):
+        datas_preenchidas = {k: n for k, n in _CAMPOS_DATAS.items() if _tem(k)}
+        if not datas_preenchidas:
+            st.info("Nenhuma data de marco cadastrada para este projeto.")
+        else:
+            st.caption("Marque as datas que deseja **apagar permanentemente** e clique em Excluir.")
+            selecionadas = {}
+            cols = st.columns(3)
+            for idx, (campo, nome) in enumerate(datas_preenchidas.items()):
+                label = f"{nome} — {_fmt_data_curta(dados.get(campo))}"
+                if cols[idx % 3].checkbox(label, key=f"del_check_{campo}"):
+                    selecionadas[campo] = nome
+
+            n_sel = len(selecionadas)
+            if st.button(
+                f"🗑️ Excluir {n_sel} data(s) selecionada(s)" if n_sel else "🗑️ Excluir selecionadas",
+                disabled=(n_sel == 0),
+                type="secondary",
+            ):
+                salvar_orcamento(
+                    projeto               = cc_selecionado,
+                    orcamento_previsto    = float(dados.get("orcamento_previsto") or 0),
+                    status_projeto        = dados.get("status_projeto") or STATUS_DEFAULT,
+                    nome_projeto_editado  = dados.get("nome_projeto_editado"),
+                    data_inicio           = None if "data_inicio"           in selecionadas else dados.get("data_inicio"),
+                    prev_viabilidade      = None if "prev_viabilidade"      in selecionadas else dados.get("prev_viabilidade"),
+                    prev_qualidade        = None if "prev_qualidade"        in selecionadas else dados.get("prev_qualidade"),
+                    prev_aprov_lancamento = None if "prev_aprov_lancamento" in selecionadas else dados.get("prev_aprov_lancamento"),
+                    prev_lancamento       = None if "prev_lancamento"       in selecionadas else dados.get("prev_lancamento"),
+                    real_viabilidade      = None if "real_viabilidade"      in selecionadas else dados.get("real_viabilidade"),
+                    real_qualidade        = None if "real_qualidade"        in selecionadas else dados.get("real_qualidade"),
+                    real_aprov_lancamento = None if "real_aprov_lancamento" in selecionadas else dados.get("real_aprov_lancamento"),
+                    real_lancamento       = None if "real_lancamento"       in selecionadas else dados.get("real_lancamento"),
+                )
+                agregar_tudo.clear()
+                nomes = ", ".join(selecionadas.values())
+                st.success(f"✅ {n_sel} data(s) removida(s): {nomes}.")
+                st.rerun()
 
 # ── 6. Resumo ─────────────────────────────────────────────────────────────────
 st.divider()

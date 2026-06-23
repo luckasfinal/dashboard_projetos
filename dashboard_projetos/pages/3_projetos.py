@@ -7,6 +7,7 @@ if str(_ROOT) not in sys.path:
 
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 from utils.db import init_db
 from utils.data_processor import (
     agregar_tudo, formata_brl, formata_brl_curto, cor_status, cor_status_projeto,
@@ -417,6 +418,12 @@ with tab_detalhe:
     row = df_grp[df_grp["nome_projeto"] == projeto_detalhe].iloc[0]
     cc  = row["projeto"]  # pode ser "100150268, 100150311" se agrupado
 
+    # Pré-filtra custos do projeto — usado no burn chart e nos gráficos abaixo
+    ccs_grupo = [c.strip() for c in str(cc).split(",")]
+    df_c_proj = pd.DataFrame()
+    if not df_custos_raw.empty and "centro_de_custo" in df_custos_raw.columns:
+        df_c_proj = df_custos_raw[df_custos_raw["centro_de_custo"].isin(ccs_grupo)].copy()
+
     # Header do projeto
     extras = " · ".join(
         str(row.get(c, "")) for c in ["filial", "area", "segmento"]
@@ -470,6 +477,108 @@ with tab_detalhe:
 
     st.divider()
 
+    # ── Burn de custo ─────────────────────────────────────────────────────────
+    if not df_c_proj.empty and "mes_ref" in df_c_proj.columns:
+        st.markdown("#### 📈 Burn de Custo")
+        val_col_b = "realizado" if "realizado" in df_c_proj.columns else "valor"
+        gasto_mes_b = (
+            df_c_proj.groupby("mes_ref")[val_col_b].sum()
+            .reset_index().sort_values("mes_ref")
+            .rename(columns={val_col_b: "gasto"})
+        )
+        gasto_mes_b = gasto_mes_b[gasto_mes_b["gasto"] != 0].copy()
+        gasto_mes_b["acumulado"] = gasto_mes_b["gasto"].cumsum()
+
+        # Converte mes_ref (YYYY-MM) para YYYY-MM-DD — Plotly detecta como datetime
+        # e permite add_vline com datas sem TypeError
+        gasto_mes_b["mes_dt"] = gasto_mes_b["mes_ref"] + "-01"
+
+        fig_burn = go.Figure()
+        fig_burn.add_trace(go.Scatter(
+            x=gasto_mes_b["mes_dt"], y=gasto_mes_b["acumulado"],
+            name="Realizado acumulado",
+            mode="lines+markers",
+            fill="tozeroy",
+            fillcolor="rgba(99,102,241,0.15)",
+            line=dict(color="#818cf8", width=2),
+            marker=dict(size=5),
+            hovertemplate="Mês: %{x|%b/%Y}<br>Acumulado: R$ %{y:,.0f}<extra></extra>",
+        ))
+
+        burn_b = projecao_burn_rate(row, df_c_proj)
+        if burn_b["status"] == "projetado" and burn_b["meses_restantes"] > 0:
+            hoje_b      = datetime.today()
+            ultimo_mes  = gasto_mes_b["mes_ref"].iloc[-1]
+            ultimo_acum = float(gasto_mes_b["acumulado"].iloc[-1])
+            proj_x = [ultimo_mes + "-01"]
+            proj_y = [ultimo_acum]
+            for i in range(1, burn_b["meses_restantes"] + 1):
+                m_abs = hoje_b.month + i
+                y_p   = hoje_b.year + (m_abs - 1) // 12
+                m_p   = (m_abs - 1) % 12 + 1
+                proj_x.append(f"{y_p}-{m_p:02d}-01")
+                proj_y.append(ultimo_acum + burn_b["ritmo_mensal"] * i)
+            fig_burn.add_trace(go.Scatter(
+                x=proj_x, y=proj_y,
+                name="Projeção (burn rate)",
+                mode="lines",
+                line=dict(color="#fbbf24", width=2, dash="dash"),
+                hovertemplate="Mês: %{x|%b/%Y}<br>Projeção: R$ %{y:,.0f}<extra></extra>",
+            ))
+
+        # add_vline falha com strings no eixo x (bug Plotly: _mean tenta sum("YYYY-MM-DD"))
+        # Solução: add_shape + add_annotation, que não chamam _mean
+        prev_lanc_iso = str(row.get("prev_lancamento") or "")[:10]
+        if len(prev_lanc_iso) == 10:
+            fig_burn.add_shape(
+                type="line", xref="x", yref="paper",
+                x0=prev_lanc_iso, x1=prev_lanc_iso, y0=0, y1=1,
+                line=dict(dash="dot", color="rgba(34,197,94,0.6)", width=1.5),
+            )
+            fig_burn.add_annotation(
+                x=prev_lanc_iso, xref="x", y=0.98, yref="paper",
+                text="Prev. lançamento",
+                showarrow=False, xanchor="left", yanchor="top",
+                font=dict(color="#22c55e", size=10),
+            )
+
+        data_conc = burn_b.get("data_conclusao_estimada")
+        dias_atr  = burn_b.get("dias_atraso_confirmado", 0)
+        if data_conc is not None and dias_atr > 0:
+            conc_iso = data_conc.strftime("%Y-%m-%d")
+            if conc_iso != prev_lanc_iso:
+                fig_burn.add_shape(
+                    type="line", xref="x", yref="paper",
+                    x0=conc_iso, x1=conc_iso, y0=0, y1=1,
+                    line=dict(dash="dash", color="rgba(239,68,68,0.7)", width=1.5),
+                )
+                fig_burn.add_annotation(
+                    x=conc_iso, xref="x", y=0.88, yref="paper",
+                    text=f"Est. c/ atraso (+{dias_atr}d)",
+                    showarrow=False, xanchor="left", yanchor="top",
+                    font=dict(color="#ef4444", size=10),
+                )
+
+        orc_b = float(row.get("orcamento", 0) or 0)
+        if orc_b > 0:
+            fig_burn.add_hline(
+                y=orc_b, line_dash="dot", line_color="#ef4444", line_width=1.5,
+                annotation_text=f"  Orçamento: R$ {orc_b:,.0f}",
+                annotation_position="top left",
+                annotation_font_color="#ef4444",
+            )
+        fig_burn.update_layout(
+            template="plotly_dark",
+            height=320,
+            margin=dict(t=20, b=40, l=80, r=20),
+            xaxis_title="Mês",
+            yaxis_title="Custo acumulado (R$)",
+            yaxis_tickformat=",.0f",
+            legend=dict(orientation="h", yanchor="bottom", y=1.01, x=0),
+        )
+        st.plotly_chart(fig_burn, use_container_width=True, key=f"burn_{cc}")
+        st.divider()
+
     # ── Cronograma com coluna Tendência ──────────────────────────────────────
     st.markdown("#### 📅 Cronograma")
     marcos_html = _tabela_marcos_html(row)
@@ -486,9 +595,6 @@ with tab_detalhe:
     st.divider()
 
     # ── Gráfico: Distribuição de Horas por Colaborador (com Área) ────────────
-    # Para projetos agrupados (múltiplos CCs), filtra por todos os CCs do grupo
-    ccs_grupo = [c.strip() for c in str(cc).split(",")]
-
     if not df_horas_raw.empty and "c_custo" in df_horas_raw.columns:
         df_h_proj = df_horas_raw[df_horas_raw["c_custo"].isin(ccs_grupo)]
         if not df_h_proj.empty and "nome" in df_h_proj.columns:
@@ -501,18 +607,15 @@ with tab_detalhe:
             st.divider()
 
     # ── Gráfico: Evolução Mensal de Desembolsos (área + colunas combinado) ───
-    df_c_proj = pd.DataFrame()
-    if not df_custos_raw.empty and "centro_de_custo" in df_custos_raw.columns:
-        df_c_proj = df_custos_raw[df_custos_raw["centro_de_custo"].isin(ccs_grupo)]
-        if not df_c_proj.empty and "mes_ref" in df_c_proj.columns:
-            st.markdown("#### 📈 Evolução Mensal de Desembolsos")
-            st.plotly_chart(
-                charts.grafico_evolucao_mensal_projeto(
-                    df_c_proj, row.get("nome_projeto", cc)
-                ),
-                use_container_width=True,
-                key=f"evolucao_mensal_{cc}",
-            )
+    if not df_c_proj.empty and "mes_ref" in df_c_proj.columns:
+        st.markdown("#### 📈 Evolução Mensal de Desembolsos")
+        st.plotly_chart(
+            charts.grafico_evolucao_mensal_projeto(
+                df_c_proj, row.get("nome_projeto", cc)
+            ),
+            use_container_width=True,
+            key=f"evolucao_mensal_{cc}",
+        )
 
     # ── 3.2 — Projeção de custo na conclusão (burn rate) ──────────────────────
     proj = projecao_burn_rate(row, df_c_proj)
