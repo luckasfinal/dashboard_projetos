@@ -157,3 +157,87 @@ def test_calcular_burn_rate_sem_mes_ref():
     df = pd.DataFrame({"centro_de_custo": ["P001"], "realizado": [1000.0]})
     result = calcular_burn_rate(df)
     assert result.empty
+
+
+# ─────────────────────────────────────────────
+# Task 4: calcular_forecast_prazo, calcular_forecast_custo, calcular_matriz_prazo_custo
+# ─────────────────────────────────────────────
+from utils.dashboard_executivo import (
+    calcular_forecast_prazo, calcular_forecast_custo, calcular_matriz_prazo_custo,
+)
+
+# ── forecast prazo ──
+def test_forecast_prazo_sem_atraso():
+    df_f = _df_proj(prev_lancamento="2026-06-01",
+                    prev_viabilidade="2026-01-01", real_viabilidade="2026-01-01")
+    df_marcos = calcular_marcos(df_f)
+    result = calcular_forecast_prazo(df_f, df_marcos)
+    row = result.iloc[0]
+    assert row["atraso_medio_dias"] == 0
+    assert str(row["forecast"]) == "2026-06-01"
+
+def test_forecast_prazo_com_atraso_10dias():
+    df_f = _df_proj(prev_lancamento="2026-06-01",
+                    prev_viabilidade="2026-01-01", real_viabilidade="2026-01-11")
+    df_marcos = calcular_marcos(df_f)
+    result = calcular_forecast_prazo(df_f, df_marcos)
+    row = result.iloc[0]
+    assert row["atraso_medio_dias"] == 10
+    assert str(row["forecast"]) == "2026-06-11"
+
+def test_forecast_prazo_sem_lancamento_previsto():
+    df_f = _df_proj()
+    df_marcos = calcular_marcos(df_f)
+    result = calcular_forecast_prazo(df_f, df_marcos)
+    assert result.iloc[0]["forecast"] is None
+
+# ── forecast custo (EAC) ──
+def test_forecast_custo_pct_zero_retorna_none():
+    df_f = _df_proj()
+    df_f["valor_total"] = 50000.0
+    df_f["orcamento"] = 100000.0
+    df_marcos = calcular_marcos(df_f)
+    result = calcular_forecast_custo(df_f, df_marcos)
+    assert result.iloc[0]["eac"] is None
+
+def test_forecast_custo_eac_calculado():
+    # Viabilidade concluída = 45% → EAC = 50000 / 0.45
+    df_f = _df_proj(prev_viabilidade="2026-01-01", real_viabilidade="2026-01-05")
+    df_f["valor_total"] = 50000.0
+    df_f["orcamento"] = 100000.0
+    df_marcos = calcular_marcos(df_f)
+    result = calcular_forecast_custo(df_f, df_marcos)
+    row = result.iloc[0]
+    assert row["eac"] == pytest.approx(50000 / 0.45, rel=1e-3)
+
+def test_forecast_custo_desvio_positivo_quando_estouro():
+    df_f = _df_proj(prev_viabilidade="2026-01-01", real_viabilidade="2026-01-01")
+    df_f["valor_total"] = 90000.0
+    df_f["orcamento"] = 100000.0
+    df_marcos = calcular_marcos(df_f)
+    result = calcular_forecast_custo(df_f, df_marcos)
+    # EAC = 90000/0.45 = 200000 > 100000 → desvio > 0
+    assert result.iloc[0]["desvio_eac_pct"] > 0
+
+# ── matriz ──
+def test_calcular_matriz_quadrante_controlado():
+    df_fp = pd.DataFrame([{"nome_projeto": "A", "data_planejada": None,
+                            "atraso_medio_dias": 0, "forecast": None, "desvio_total": -5}])
+    df_fc = pd.DataFrame([{"nome_projeto": "A", "custo_atual": 0, "pct_concluido": 0.5,
+                            "eac": 80000.0, "orcamento": 100000.0, "desvio_eac_pct": -20.0}])
+    result = calcular_matriz_prazo_custo(df_fp, df_fc)
+    assert result.iloc[0]["quadrante"] == "Controlado"
+
+def test_calcular_matriz_quadrante_critico():
+    df_fp = pd.DataFrame([{"nome_projeto": "B", "data_planejada": None,
+                            "atraso_medio_dias": 30, "forecast": None, "desvio_total": 30}])
+    df_fc = pd.DataFrame([{"nome_projeto": "B", "custo_atual": 0, "pct_concluido": 0.5,
+                            "eac": 120000.0, "orcamento": 100000.0, "desvio_eac_pct": 20.0}])
+    result = calcular_matriz_prazo_custo(df_fp, df_fc)
+    assert result.iloc[0]["quadrante"] == "Crítico"
+
+def test_calcular_matriz_vazio_sem_eac():
+    df_fp = pd.DataFrame([{"nome_projeto": "C", "desvio_total": 5}])
+    df_fc = pd.DataFrame([{"nome_projeto": "C", "desvio_eac_pct": None}])
+    result = calcular_matriz_prazo_custo(df_fp, df_fc)
+    assert result.empty

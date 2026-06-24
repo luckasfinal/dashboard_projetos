@@ -111,3 +111,83 @@ def calcular_burn_rate(df_custos_f: pd.DataFrame) -> pd.DataFrame:
     df["_n"] = df.groupby("projeto").cumcount() + 1
     df["burn_rate"] = df["custo_acumulado"] / df["_n"]
     return df.drop(columns=["_n"])
+
+
+# ─────────────────────────────────────────────
+# Forecast de Prazo (Seção 9)
+# ─────────────────────────────────────────────
+
+def calcular_forecast_prazo(df_f: pd.DataFrame, df_marcos: pd.DataFrame) -> pd.DataFrame:
+    atraso_medio = (
+        df_marcos[df_marcos["concluido"] & (df_marcos["desvio_dias"] > 0)]
+        .groupby("projeto")["desvio_dias"].mean().round()
+    )
+    linhas: list[dict] = []
+    for _, row in df_f.iterrows():
+        proj = row["projeto"]
+        prev_lanc = _parse_data(row.get("prev_lancamento"))
+        atraso_d = int(atraso_medio.get(proj, 0) or 0)
+        forecast = (prev_lanc + timedelta(days=atraso_d)) if prev_lanc else None
+        linhas.append({
+            "nome_projeto":      row.get("nome_projeto", proj),
+            "data_planejada":    prev_lanc,
+            "atraso_medio_dias": atraso_d,
+            "forecast":          forecast,
+            "desvio_total":      atraso_d,
+        })
+    return pd.DataFrame(linhas)
+
+
+# ─────────────────────────────────────────────
+# Forecast de Custo / EAC (Seção 10)
+# ─────────────────────────────────────────────
+
+def calcular_forecast_custo(df_f: pd.DataFrame, df_marcos: pd.DataFrame) -> pd.DataFrame:
+    pct_por_proj = (
+        df_marcos[df_marcos["concluido"]].groupby("projeto")["peso"].sum()
+    )
+    linhas: list[dict] = []
+    for _, row in df_f.iterrows():
+        proj  = row["projeto"]
+        custo = float(row.get("valor_total", 0) or 0)
+        orc   = float(row.get("orcamento", 0) or 0)
+        pct   = float(pct_por_proj.get(proj, 0) or 0)
+        eac   = (custo / pct) if pct > 0 else None
+        desvio = ((eac - orc) / orc * 100) if (eac is not None and orc > 0) else None
+        linhas.append({
+            "nome_projeto":  row.get("nome_projeto", proj),
+            "custo_atual":   custo,
+            "pct_concluido": pct,
+            "eac":           eac,
+            "orcamento":     orc,
+            "desvio_eac_pct": desvio,
+        })
+    return pd.DataFrame(linhas)
+
+
+# ─────────────────────────────────────────────
+# Matriz Executiva Prazo × Custo (Seção 11)
+# ─────────────────────────────────────────────
+
+def calcular_matriz_prazo_custo(
+    df_forecast_prazo: pd.DataFrame,
+    df_forecast_custo: pd.DataFrame,
+) -> pd.DataFrame:
+    df = (
+        df_forecast_prazo[["nome_projeto", "desvio_total"]]
+        .rename(columns={"desvio_total": "desvio_prazo_dias"})
+        .merge(df_forecast_custo[["nome_projeto", "desvio_eac_pct"]], on="nome_projeto", how="inner")
+        .dropna(subset=["desvio_eac_pct"])
+    )
+    if df.empty:
+        return df.assign(quadrante=pd.Series(dtype=str))
+
+    def _quad(row) -> str:
+        x, y = row["desvio_prazo_dias"], row["desvio_eac_pct"]
+        if x <= 0 and y <= 0: return "Controlado"
+        if x > 0  and y <= 0: return "Risco de Prazo"
+        if x <= 0 and y > 0:  return "Risco de Custo"
+        return "Crítico"
+
+    df["quadrante"] = df.apply(_quad, axis=1)
+    return df
