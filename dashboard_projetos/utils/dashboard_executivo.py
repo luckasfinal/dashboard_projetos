@@ -191,3 +191,147 @@ def calcular_matriz_prazo_custo(
 
     df["quadrante"] = df.apply(_quad, axis=1)
     return df
+
+
+# ─────────────────────────────────────────────
+# Resumo Executivo (Seção 1)
+# ─────────────────────────────────────────────
+
+_STATUS_TERMINAIS = {"Cancelado", "Lançado"}
+
+
+def calcular_resumo_executivo(
+    df_f: pd.DataFrame,
+    df_custos_f: pd.DataFrame,
+    df_horas_f: pd.DataFrame,
+    df_marcos: pd.DataFrame,
+) -> dict:
+    if "status_projeto" in df_f.columns:
+        projetos_ativos = int(
+            df_f["status_projeto"].apply(lambda s: str(s).strip() not in _STATUS_TERMINAIS).sum()
+        )
+    else:
+        projetos_ativos = len(df_f)
+
+    atrasados_set = set(df_marcos[df_marcos["status_marco"] == "Atrasado"]["projeto"].unique())
+    projetos_com_atraso = len(atrasados_set & set(df_f["projeto"].unique()))
+
+    horas  = float(df_horas_f["hs_nor"].sum())  if (not df_horas_f.empty  and "hs_nor"    in df_horas_f.columns)  else 0.0
+    custos = float(df_custos_f["realizado"].sum()) if (not df_custos_f.empty and "realizado" in df_custos_f.columns) else 0.0
+
+    pct_s = (
+        df_marcos[df_marcos["concluido"]].groupby("projeto")["peso"].sum()
+        .reindex(df_f["projeto"].unique()).fillna(0.0)
+    )
+    pct_medio = float(pct_s.mean()) if not pct_s.empty else 0.0
+
+    atrasos = df_marcos[df_marcos["concluido"] & (df_marcos["desvio_dias"] > 0)]["desvio_dias"]
+    prazo_medio = float(atrasos.mean()) if not atrasos.empty else 0.0
+
+    return {
+        "projetos_ativos":     projetos_ativos,
+        "projetos_com_atraso": projetos_com_atraso,
+        "horas_consumidas":    horas,
+        "custos_acumulados":   custos,
+        "pct_medio_conclusao": pct_medio,
+        "prazo_medio_atraso":  prazo_medio,
+    }
+
+
+# ─────────────────────────────────────────────
+# Status Geral dos Projetos (Seção 2)
+# ─────────────────────────────────────────────
+
+def calcular_status_projetos(
+    df_f: pd.DataFrame,
+    df_marcos: pd.DataFrame,
+    df_custos_f: pd.DataFrame,
+    df_horas_f: pd.DataFrame,
+) -> pd.DataFrame:
+    pct = (
+        df_marcos[df_marcos["concluido"]].groupby("projeto")["peso"].sum()
+        .reset_index().rename(columns={"peso": "pct_concluido"})
+    )
+    marcos_ok = (
+        df_marcos[df_marcos["concluido"]].groupby("projeto").size()
+        .reset_index(name="marcos_concluidos")
+    )
+    atraso = (
+        df_marcos[df_marcos["status_marco"] == "Atrasado"]
+        .groupby("projeto")["desvio_dias"].mean()
+        .reset_index().rename(columns={"desvio_dias": "atraso_medio_dias"})
+    )
+    horas_p = pd.DataFrame(columns=["projeto", "horas_total"])
+    if not df_horas_f.empty and "c_custo" in df_horas_f.columns:
+        horas_p = (
+            df_horas_f.groupby("c_custo")["hs_nor"].sum()
+            .reset_index().rename(columns={"c_custo": "projeto", "hs_nor": "horas_total"})
+        )
+    custos_p = pd.DataFrame(columns=["projeto", "custo_total"])
+    if not df_custos_f.empty and "centro_de_custo" in df_custos_f.columns:
+        custos_p = (
+            df_custos_f.groupby("centro_de_custo")["realizado"].sum()
+            .reset_index().rename(columns={"centro_de_custo": "projeto", "realizado": "custo_total"})
+        )
+    cols = ["projeto", "nome_projeto"]
+    if "status_projeto" in df_f.columns:
+        cols.append("status_projeto")
+    result = (
+        df_f[cols].copy()
+        .merge(pct,       on="projeto", how="left")
+        .merge(marcos_ok, on="projeto", how="left")
+        .merge(atraso,    on="projeto", how="left")
+        .merge(horas_p,   on="projeto", how="left")
+        .merge(custos_p,  on="projeto", how="left")
+    )
+    result["pct_concluido"]     = result["pct_concluido"].fillna(0.0)
+    result["marcos_concluidos"] = result["marcos_concluidos"].fillna(0).astype(int)
+    result["marcos_totais"]     = 4
+    result["atraso_medio_dias"] = result["atraso_medio_dias"].fillna(0.0)
+    if "horas_total" not in result.columns:
+        result["horas_total"] = 0.0
+    else:
+        result["horas_total"] = result["horas_total"].fillna(0.0)
+    if "custo_total" not in result.columns:
+        result["custo_total"] = 0.0
+    else:
+        result["custo_total"] = result["custo_total"].fillna(0.0)
+    result["status_visual"] = result["atraso_medio_dias"].apply(
+        lambda a: "🟢" if a <= 0 else ("🟡" if a <= 30 else "🔴")
+    )
+    return result
+
+
+# ─────────────────────────────────────────────
+# Custos por Categoria (Seções 5, 6)
+# ─────────────────────────────────────────────
+
+def calcular_custos_por_categoria(df_custos_f: pd.DataFrame) -> pd.DataFrame:
+    if df_custos_f.empty or "centro_de_custo" not in df_custos_f.columns:
+        return pd.DataFrame(columns=["projeto", "categoria_custo", "total_custo"])
+    df = df_custos_f.copy()
+    if "categoria_custo" not in df.columns:
+        df["categoria_custo"] = df.get("conta", pd.Series("", index=df.index)).apply(categorizar_conta)
+    return (
+        df.groupby(["centro_de_custo", "categoria_custo"])["realizado"].sum()
+        .reset_index().rename(columns={"centro_de_custo": "projeto", "realizado": "total_custo"})
+    )
+
+
+# ─────────────────────────────────────────────
+# Consumo de Recursos (Seção 7)
+# ─────────────────────────────────────────────
+
+def calcular_recursos(df_f: pd.DataFrame, df_horas_f: pd.DataFrame) -> pd.DataFrame:
+    if df_horas_f.empty or "c_custo" not in df_horas_f.columns:
+        return pd.DataFrame(columns=["nome_projeto", "horas_total", "n_colaboradores", "horas_por_colaborador"])
+    agg = (
+        df_horas_f.groupby("c_custo")
+        .agg(horas_total=("hs_nor", "sum"), n_colaboradores=("nome", "nunique"))
+        .reset_index().rename(columns={"c_custo": "projeto"})
+    )
+    agg["horas_por_colaborador"] = agg.apply(
+        lambda r: r["horas_total"] / r["n_colaboradores"] if r["n_colaboradores"] > 0 else 0.0, axis=1
+    )
+    nomes = df_f[["projeto", "nome_projeto"]].drop_duplicates("projeto")
+    return agg.merge(nomes, on="projeto", how="left")

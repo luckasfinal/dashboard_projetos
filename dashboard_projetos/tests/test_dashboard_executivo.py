@@ -241,3 +241,104 @@ def test_calcular_matriz_vazio_sem_eac():
     df_fc = pd.DataFrame([{"nome_projeto": "C", "desvio_eac_pct": None}])
     result = calcular_matriz_prazo_custo(df_fp, df_fc)
     assert result.empty
+
+
+# ─────────────────────────────────────────────
+# Task 5: calcular_resumo_executivo, calcular_status_projetos,
+#         calcular_custos_por_categoria, calcular_recursos
+# ─────────────────────────────────────────────
+from utils.dashboard_executivo import (
+    calcular_resumo_executivo, calcular_status_projetos,
+    calcular_custos_por_categoria, calcular_recursos,
+)
+
+def _df_custos(projeto="P001", conta="610000 - Mão de Obra", valor=10000.0, mes="2026-01"):
+    return pd.DataFrame({
+        "centro_de_custo": [projeto], "conta": [conta],
+        "realizado": [valor], "mes_ref": [mes],
+    })
+
+def _df_horas(projeto="P001", colaborador="Ana", horas=80.0):
+    return pd.DataFrame({
+        "c_custo": [projeto], "nome": [colaborador], "hs_nor": [horas],
+    })
+
+# ── resumo executivo ──
+def test_resumo_executivo_projetos_ativos():
+    df_f = _df_proj()
+    df_f["status_projeto"] = "Viabilizado"
+    df_marcos = calcular_marcos(df_f)
+    r = calcular_resumo_executivo(df_f, _df_custos(), _df_horas(), df_marcos)
+    assert r["projetos_ativos"] == 1
+
+def test_resumo_executivo_projeto_cancelado_nao_conta():
+    df_f = _df_proj()
+    df_f["status_projeto"] = "Cancelado"
+    df_marcos = calcular_marcos(df_f)
+    r = calcular_resumo_executivo(df_f, pd.DataFrame(), pd.DataFrame(), df_marcos)
+    assert r["projetos_ativos"] == 0
+
+def test_resumo_executivo_horas_e_custos():
+    df_f = _df_proj()
+    df_marcos = calcular_marcos(df_f)
+    r = calcular_resumo_executivo(df_f, _df_custos(valor=5000.0), _df_horas(horas=40.0), df_marcos)
+    assert r["horas_consumidas"] == pytest.approx(40.0)
+    assert r["custos_acumulados"] == pytest.approx(5000.0)
+
+def test_resumo_executivo_pct_medio_zero_sem_marcos():
+    df_f = _df_proj()
+    df_marcos = calcular_marcos(df_f)
+    r = calcular_resumo_executivo(df_f, pd.DataFrame(), pd.DataFrame(), df_marcos)
+    assert r["pct_medio_conclusao"] == pytest.approx(0.0)
+
+# ── status projetos ──
+def test_status_projetos_colunas():
+    df_f = _df_proj()
+    df_f["status_projeto"] = "Viabilizado"
+    df_marcos = calcular_marcos(df_f)
+    result = calcular_status_projetos(df_f, df_marcos, pd.DataFrame(), pd.DataFrame())
+    assert "pct_concluido" in result.columns
+    assert "marcos_concluidos" in result.columns
+    assert "marcos_totais" in result.columns
+    assert result.iloc[0]["marcos_totais"] == 4
+
+def test_status_projetos_status_visual_verde():
+    df_f = _df_proj()
+    df_f["status_projeto"] = "Viabilizado"
+    df_marcos = calcular_marcos(df_f)
+    result = calcular_status_projetos(df_f, df_marcos, pd.DataFrame(), pd.DataFrame())
+    assert result.iloc[0]["status_visual"] == "🟢"
+
+# ── custos por categoria ──
+def test_calcular_custos_por_categoria_vazio():
+    result = calcular_custos_por_categoria(pd.DataFrame())
+    assert result.empty
+
+def test_calcular_custos_por_categoria_agrupa():
+    df = pd.DataFrame({
+        "centro_de_custo": ["P001", "P001"],
+        "conta": ["610000 - Mão de Obra", "610001 - Salário"],
+        "realizado": [1000.0, 2000.0],
+    })
+    result = calcular_custos_por_categoria(df)
+    row = result[result["categoria_custo"] == "Mão de obra"].iloc[0]
+    assert row["total_custo"] == pytest.approx(3000.0)
+
+# ── recursos ──
+def test_calcular_recursos_vazio():
+    df_f = _df_proj()
+    result = calcular_recursos(df_f, pd.DataFrame())
+    assert result.empty
+
+def test_calcular_recursos_horas_por_colaborador():
+    df_f = _df_proj()
+    df_horas = pd.DataFrame({
+        "c_custo": ["P001", "P001"],
+        "nome": ["Ana", "João"],
+        "hs_nor": [80.0, 40.0],
+    })
+    result = calcular_recursos(df_f, df_horas)
+    row = result.iloc[0]
+    assert row["horas_total"] == pytest.approx(120.0)
+    assert row["n_colaboradores"] == 2
+    assert row["horas_por_colaborador"] == pytest.approx(60.0)
