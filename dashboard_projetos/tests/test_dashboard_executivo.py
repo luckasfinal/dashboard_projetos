@@ -115,3 +115,45 @@ def test_calcular_marcos_todos_concluidos():
         prev_lancamento="2026-06-01",  real_lancamento="2026-06-01",
     ))
     assert result[result["concluido"]]["peso"].sum() == pytest.approx(1.0)
+
+
+# ─────────────────────────────────────────────
+# Task 3: calcular_burn_rate
+# ─────────────────────────────────────────────
+from utils.dashboard_executivo import calcular_burn_rate
+
+
+def test_calcular_burn_rate_vazio():
+    result = calcular_burn_rate(pd.DataFrame())
+    assert result.empty
+
+
+def test_calcular_burn_rate_um_mes():
+    df = pd.DataFrame({
+        "centro_de_custo": ["P001", "P001"],
+        "mes_ref": ["2026-01", "2026-01"],
+        "realizado": [10000.0, 5000.0],
+    })
+    result = calcular_burn_rate(df)
+    assert len(result) == 1
+    row = result.iloc[0]
+    assert row["custo_mensal"] == pytest.approx(15000.0)
+    assert row["custo_acumulado"] == pytest.approx(15000.0)
+    assert row["burn_rate"] == pytest.approx(15000.0)
+
+
+def test_calcular_burn_rate_dois_meses():
+    df = pd.DataFrame({
+        "centro_de_custo": ["P001", "P001"],
+        "mes_ref": ["2026-01", "2026-02"],
+        "realizado": [10000.0, 20000.0],
+    })
+    result = calcular_burn_rate(df).sort_values("mes_ref")
+    assert result.iloc[1]["custo_acumulado"] == pytest.approx(30000.0)
+    assert result.iloc[1]["burn_rate"] == pytest.approx(15000.0)
+
+
+def test_calcular_burn_rate_sem_mes_ref():
+    df = pd.DataFrame({"centro_de_custo": ["P001"], "realizado": [1000.0]})
+    result = calcular_burn_rate(df)
+    assert result.empty

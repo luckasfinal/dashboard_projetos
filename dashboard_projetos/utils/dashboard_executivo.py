@@ -92,3 +92,22 @@ def calcular_marcos(df: pd.DataFrame) -> pd.DataFrame:
     if "concluido" in result.columns:
         result["concluido"] = result["concluido"].astype(object)
     return result
+
+
+# ─────────────────────────────────────────────
+# Burn Rate (Seção 8)
+# ─────────────────────────────────────────────
+
+def calcular_burn_rate(df_custos_f: pd.DataFrame) -> pd.DataFrame:
+    if df_custos_f.empty or "mes_ref" not in df_custos_f.columns:
+        return pd.DataFrame(columns=["projeto", "mes_ref", "custo_mensal", "custo_acumulado", "burn_rate"])
+    df = (
+        df_custos_f.groupby(["centro_de_custo", "mes_ref"])["realizado"]
+        .sum().reset_index()
+        .rename(columns={"centro_de_custo": "projeto", "realizado": "custo_mensal"})
+        .sort_values(["projeto", "mes_ref"])
+    )
+    df["custo_acumulado"] = df.groupby("projeto")["custo_mensal"].cumsum()
+    df["_n"] = df.groupby("projeto").cumcount() + 1
+    df["burn_rate"] = df["custo_acumulado"] / df["_n"]
+    return df.drop(columns=["_n"])
