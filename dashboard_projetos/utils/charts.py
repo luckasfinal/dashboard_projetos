@@ -384,6 +384,7 @@ def grafico_timeline_lancamentos(df: pd.DataFrame) -> go.Figure:
 
     Cada projeto ocupa uma linha (eixo Y). Ordena pelo previsto mais próximo.
     """
+
     def _parse(val):
         if not val or str(val) in ("0", "None", "nan", ""):
             return None
@@ -470,6 +471,153 @@ def grafico_timeline_lancamentos(df: pd.DataFrame) -> go.Figure:
         xaxis=dict(title=None, gridcolor="rgba(128,128,128,.15)", type="date"),
         yaxis=dict(title=None, categoryorder="array", categoryarray=nomes,
                    gridcolor="rgba(128,128,128,.08)"),
+        hovermode="closest",
+    )
+    return fig
+
+
+# ─────────────────────────────────────────────
+# Dashboard Executivo — gráficos
+# ─────────────────────────────────────────────
+
+CORES_CATEGORIA: dict[str, str] = {
+    "Mão de obra": "#4C78A8",
+    "Terceiros":   "#F58518",
+    "Materiais":   "#54A24B",
+    "Viagens":     "#B279A2",
+    "Outras":      "#9D755D",
+}
+
+_COR_QUADRANTE: dict[str, str] = {
+    "Controlado":     "#22c55e",
+    "Risco de Prazo": "#f59e0b",
+    "Risco de Custo": "#f97316",
+    "Crítico":        "#ef4444",
+}
+
+
+def grafico_evolucao_fisica(df_status: pd.DataFrame) -> go.Figure:
+    """Barras horizontais de % concluído por projeto."""
+    df_plot = df_status.sort_values("pct_concluido", ascending=True).tail(LIMITE_GRAFICO)
+    fig = go.Figure(go.Bar(
+        y=df_plot["nome_projeto"],
+        x=(df_plot["pct_concluido"] * 100).round(1),
+        orientation="h",
+        marker_color="#4C78A8",
+        text=[f"{v*100:.0f}%" for v in df_plot["pct_concluido"]],
+        textposition="outside",
+        hovertemplate="<b>%{y}</b><br>Concluído: %{x:.1f}%<extra></extra>",
+    ))
+    fig.update_layout(
+        **LAYOUT_BASE,
+        title="<b>Evolução Física dos Projetos</b>",
+        margin=_MARGIN,
+        xaxis=dict(range=[0, 115], ticksuffix="%", gridcolor="rgba(128,128,128,.15)"),
+    )
+    return fig
+
+
+def grafico_custos_empilhados(df_cat: pd.DataFrame) -> go.Figure:
+    """Barras empilhadas custo por projeto e categoria."""
+    eixo = "nome_projeto" if "nome_projeto" in df_cat.columns else "projeto"
+    nomes = df_cat[eixo].unique()[:LIMITE_GRAFICO]
+    fig = go.Figure()
+    for cat in ["Mão de obra", "Terceiros", "Materiais", "Viagens", "Outras"]:
+        df_c = df_cat[df_cat["categoria_custo"] == cat]
+        valores = [float(df_c[df_c[eixo] == p]["total_custo"].sum()) for p in nomes]
+        if any(v > 0 for v in valores):
+            fig.add_trace(go.Bar(
+                name=cat, x=list(nomes), y=valores,
+                marker_color=CORES_CATEGORIA.get(cat, "#94a3b8"),
+                hovertemplate=f"<b>%{{x}}</b><br>{cat}: R$ %{{y:,.0f}}<extra></extra>",
+            ))
+    fig.update_layout(
+        **LAYOUT_BASE,
+        title="<b>Custos por Projeto e Categoria</b>",
+        barmode="stack", legend=_LEGEND_H, margin=_MARGIN,
+        yaxis=dict(tickprefix="R$ ", tickformat=",.0f", gridcolor="rgba(128,128,128,.15)"),
+        xaxis=dict(tickangle=-30),
+    )
+    return fig
+
+
+def grafico_distribuicao_custos(df_cat: pd.DataFrame) -> go.Figure:
+    """Donut de custos por categoria."""
+    total = df_cat.groupby("categoria_custo")["total_custo"].sum().reset_index()
+    fig = go.Figure(go.Pie(
+        labels=total["categoria_custo"],
+        values=total["total_custo"],
+        hole=0.45,
+        marker_colors=[CORES_CATEGORIA.get(c, "#94a3b8") for c in total["categoria_custo"]],
+        textinfo="label+percent",
+        hovertemplate="<b>%{label}</b><br>R$ %{value:,.0f} · %{percent}<extra></extra>",
+    ))
+    fig.update_layout(
+        **LAYOUT_BASE,
+        title="<b>Distribuição de Custos por Categoria</b>",
+        margin=_MARGIN, legend=_LEGEND_H,
+    )
+    return fig
+
+
+def grafico_burn_rate_temporal(df_br: pd.DataFrame) -> go.Figure:
+    """Linha de custo acumulado mensal (top 10 projetos)."""
+    top_projs = (
+        df_br.groupby("projeto")["custo_acumulado"].max()
+        .nlargest(10).index.tolist()
+    )
+    fig = go.Figure()
+    for i, proj in enumerate(top_projs):
+        df_p = df_br[df_br["projeto"] == proj].sort_values("mes_ref")
+        fig.add_trace(go.Scatter(
+            x=df_p["mes_ref"], y=df_p["custo_acumulado"],
+            mode="lines+markers", name=proj[:20],
+            line=dict(color=CORES[i % len(CORES)]),
+            hovertemplate=f"<b>{proj[:20]}</b><br>%{{x}}<br>Acumulado: R$ %{{y:,.0f}}<extra></extra>",
+        ))
+    fig.update_layout(
+        **LAYOUT_BASE,
+        title="<b>Burn Rate — Custo Acumulado por Projeto</b>",
+        legend=_LEGEND_H, margin=_MARGIN,
+        yaxis=dict(tickprefix="R$ ", tickformat=",.0f", gridcolor="rgba(128,128,128,.15)"),
+        xaxis=dict(gridcolor="rgba(128,128,128,.15)"),
+    )
+    return fig
+
+
+def grafico_matriz_executiva(df_matriz: pd.DataFrame) -> go.Figure:
+    """Scatter de 4 quadrantes Prazo × Custo."""
+    fig = go.Figure()
+    for quadrante, grp in df_matriz.groupby("quadrante"):
+        fig.add_trace(go.Scatter(
+            x=grp["desvio_prazo_dias"], y=grp["desvio_eac_pct"],
+            mode="markers+text", name=quadrante,
+            marker=dict(size=14, color=_COR_QUADRANTE.get(quadrante, "#94a3b8"),
+                        opacity=0.85, line=dict(width=1, color="rgba(255,255,255,0.2)")),
+            text=grp["nome_projeto"].apply(lambda n: (str(n)[:12] + "…") if len(str(n)) > 12 else str(n)),
+            textposition="top center",
+            textfont=dict(size=9, color="rgba(255,255,255,0.85)"),
+            hovertemplate="<b>%{text}</b><br>Desvio prazo: %{x} dias<br>Desvio custo: %{y:.1f}%<extra></extra>",
+        ))
+    fig.add_vline(x=0, line_dash="dash", line_color="rgba(148,163,184,.4)")
+    fig.add_hline(y=0, line_dash="dash", line_color="rgba(148,163,184,.4)")
+    for texto, xr, yr, xa, ya in [
+        ("🟢 Controlado",  0.02, 0.02, "left",  "bottom"),
+        ("🟡 Risco Prazo", 0.98, 0.02, "right", "bottom"),
+        ("🟠 Risco Custo", 0.02, 0.98, "left",  "top"),
+        ("🔴 Crítico",     0.98, 0.98, "right", "top"),
+    ]:
+        fig.add_annotation(xref="paper", yref="paper", x=xr, y=yr, text=texto,
+                           showarrow=False, font=dict(size=10, color="rgba(148,163,184,.55)"),
+                           xanchor=xa, yanchor=ya)
+    fig.update_layout(
+        **LAYOUT_BASE,
+        title="<b>Matriz Executiva — Prazo × Custo</b>",
+        legend=_LEGEND_H, margin=_MARGIN,
+        xaxis_title="Desvio de Prazo (dias)",
+        yaxis_title="Desvio de Custo EAC (%)",
+        xaxis=dict(zeroline=False, gridcolor="rgba(128,128,128,.15)"),
+        yaxis=dict(zeroline=False, gridcolor="rgba(128,128,128,.15)"),
         hovermode="closest",
     )
     return fig
