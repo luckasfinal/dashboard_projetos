@@ -187,10 +187,11 @@ with st.form("form_orcamento", clear_on_submit=False):
     else:
         st.caption("🔵 indica campo com dado já salvo.")
 
-    h1, h2, h3 = st.columns([2, 2, 2])
+    h1, h2, h3, h4 = st.columns([2, 2, 2, 3])
     h1.markdown("**Marco**")
     h2.markdown("**🗓️ Data Prevista**")
     h3.markdown("**✅ Data Realizada**")
+    h4.markdown("**💬 Observação**")
     st.markdown("<hr style='margin:4px 0 12px 0'>", unsafe_allow_html=True)
 
     v = {k: _parse_date_or_none(dados.get(k)) if dados else None for k in [
@@ -200,40 +201,59 @@ with st.form("form_orcamento", clear_on_submit=False):
         "prev_aprov_lancamento", "real_aprov_lancamento",
         "prev_lancamento",       "real_lancamento",
     ]}
+    obs_salvas = {
+        "obs_viabilidade":      (dados.get("obs_viabilidade")      or "") if dados else "",
+        "obs_qualidade":        (dados.get("obs_qualidade")        or "") if dados else "",
+        "obs_aprov_lancamento": (dados.get("obs_aprov_lancamento") or "") if dados else "",
+        "obs_lancamento":       (dados.get("obs_lancamento")       or "") if dados else "",
+    }
 
-    r1c1, r1c2, r1c3 = st.columns([2, 2, 2])
+    r1c1, r1c2, r1c3, r1c4 = st.columns([2, 2, 2, 3])
     r1c1.markdown(f"**{_ind('data_inicio')}Início do Projeto**<br><small>(abertura CC)</small>", unsafe_allow_html=True)
     d_inicio = r1c2.date_input("##inicio_prev", value=v["data_inicio"], format="DD/MM/YYYY",
                                 label_visibility="collapsed", disabled=not _admin)
     r1c3.markdown("<div style='padding-top:8px;color:#aaa;font-size:13px'>—</div>", unsafe_allow_html=True)
+    r1c4.markdown("<div style='padding-top:8px;color:#aaa;font-size:13px'>—</div>", unsafe_allow_html=True)
 
-    r2c1, r2c2, r2c3 = st.columns([2, 2, 2])
+    r2c1, r2c2, r2c3, r2c4 = st.columns([2, 2, 2, 3])
     r2c1.markdown(f"**{_ind('prev_viabilidade')}Aprovação da Viabilidade**")
     p_viabilidade = r2c2.date_input("##viab_prev", value=v["prev_viabilidade"], format="DD/MM/YYYY",
                                      label_visibility="collapsed", disabled=not _admin)
     r_viabilidade = r2c3.date_input("##viab_real", value=v["real_viabilidade"], format="DD/MM/YYYY",
                                      label_visibility="collapsed", disabled=not _admin)
+    obs_viab = r2c4.text_input("##obs_viab", value=obs_salvas["obs_viabilidade"],
+                                placeholder="Observação sobre este marco…",
+                                label_visibility="collapsed", disabled=not _admin)
 
-    r3c1, r3c2, r3c3 = st.columns([2, 2, 2])
+    r3c1, r3c2, r3c3, r3c4 = st.columns([2, 2, 2, 3])
     r3c1.markdown(f"**{_ind('prev_qualidade')}Critérios de Qualidade**")
     p_qualidade = r3c2.date_input("##qual_prev", value=v["prev_qualidade"], format="DD/MM/YYYY",
                                    label_visibility="collapsed", disabled=not _admin)
     r_qualidade = r3c3.date_input("##qual_real", value=v["real_qualidade"], format="DD/MM/YYYY",
                                    label_visibility="collapsed", disabled=not _admin)
+    obs_qual = r3c4.text_input("##obs_qual", value=obs_salvas["obs_qualidade"],
+                                placeholder="Observação sobre este marco…",
+                                label_visibility="collapsed", disabled=not _admin)
 
-    r4c1, r4c2, r4c3 = st.columns([2, 2, 2])
+    r4c1, r4c2, r4c3, r4c4 = st.columns([2, 2, 2, 3])
     r4c1.markdown(f"**{_ind('prev_aprov_lancamento')}Aprovação para Lançamento**")
     p_aprov_lanc = r4c2.date_input("##aprov_prev", value=v["prev_aprov_lancamento"], format="DD/MM/YYYY",
                                     label_visibility="collapsed", disabled=not _admin)
     r_aprov_lanc = r4c3.date_input("##aprov_real", value=v["real_aprov_lancamento"], format="DD/MM/YYYY",
                                     label_visibility="collapsed", disabled=not _admin)
+    obs_aprov = r4c4.text_input("##obs_aprov", value=obs_salvas["obs_aprov_lancamento"],
+                                 placeholder="Observação sobre este marco…",
+                                 label_visibility="collapsed", disabled=not _admin)
 
-    r5c1, r5c2, r5c3 = st.columns([2, 2, 2])
+    r5c1, r5c2, r5c3, r5c4 = st.columns([2, 2, 2, 3])
     r5c1.markdown(f"**{_ind('prev_lancamento')}🚀 LANÇAMENTO**")
     p_lancamento = r5c2.date_input("##lanc_prev", value=v["prev_lancamento"], format="DD/MM/YYYY",
                                     label_visibility="collapsed", disabled=not _admin)
     r_lancamento = r5c3.date_input("##lanc_real", value=v["real_lancamento"], format="DD/MM/YYYY",
                                     label_visibility="collapsed", disabled=not _admin)
+    obs_lanc = r5c4.text_input("##obs_lanc", value=obs_salvas["obs_lancamento"],
+                                placeholder="Observação sobre este marco…",
+                                label_visibility="collapsed", disabled=not _admin)
 
     st.markdown("<br>", unsafe_allow_html=True)
     if _admin:
@@ -296,6 +316,10 @@ if botao_salvar and _admin:
             real_aprov_lancamento = real_aprov_f,
             real_lancamento       = real_lanc_f,
             nome_projeto_editado  = nome_para_salvar,
+            obs_viabilidade       = obs_viab.strip() or None,
+            obs_qualidade         = obs_qual.strip() or None,
+            obs_aprov_lancamento  = obs_aprov.strip() or None,
+            obs_lancamento        = obs_lanc.strip() or None,
         )
         agregar_tudo.clear()
         st.success(f"✅ Dados do projeto **{cc_selecionado}** gravados com sucesso!")
@@ -356,6 +380,10 @@ if _admin and dados:
                     real_qualidade        = None if "real_qualidade"        in selecionadas else dados.get("real_qualidade"),
                     real_aprov_lancamento = None if "real_aprov_lancamento" in selecionadas else dados.get("real_aprov_lancamento"),
                     real_lancamento       = None if "real_lancamento"       in selecionadas else dados.get("real_lancamento"),
+                    obs_viabilidade       = dados.get("obs_viabilidade") or None,
+                    obs_qualidade         = dados.get("obs_qualidade") or None,
+                    obs_aprov_lancamento  = dados.get("obs_aprov_lancamento") or None,
+                    obs_lancamento        = dados.get("obs_lancamento") or None,
                 )
                 agregar_tudo.clear()
                 nomes = ", ".join(selecionadas.values())

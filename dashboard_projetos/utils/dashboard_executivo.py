@@ -43,6 +43,13 @@ MARCOS_CONFIG: list[tuple[str, str, str, float]] = [
     ("prev_lancamento",       "real_lancamento",       "Lançamento",              0.10),
 ]
 
+_MARCOS_OBS_COL: dict[str, str] = {
+    "Viabilidade":             "obs_viabilidade",
+    "Qualidade":               "obs_qualidade",
+    "Aprovação p/ Lançamento": "obs_aprov_lancamento",
+    "Lançamento":              "obs_lancamento",
+}
+
 
 def _parse_data(val) -> date | None:
     if val is None or (isinstance(val, float) and pd.isna(val)):
@@ -77,6 +84,9 @@ def calcular_marcos(df: pd.DataFrame) -> pd.DataFrame:
                 status = "Atrasado" if desvio > 0 else "Pendente"
             else:
                 desvio, status = 0, "Pendente"
+            obs_raw = row.get(_MARCOS_OBS_COL.get(label, ""), "")
+            if obs_raw is None or (isinstance(obs_raw, float) and pd.isna(obs_raw)):
+                obs_raw = ""
             linhas.append({
                 "projeto":        row.get("projeto"),
                 "nome_projeto":   row.get("nome_projeto", row.get("projeto")),
@@ -87,6 +97,7 @@ def calcular_marcos(df: pd.DataFrame) -> pd.DataFrame:
                 "desvio_dias":    desvio,
                 "status_marco":   status,
                 "concluido":      concluido,
+                "observacao":     str(obs_raw).strip(),
             })
     result = pd.DataFrame(linhas)
     if "concluido" in result.columns:

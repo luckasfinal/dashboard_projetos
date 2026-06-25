@@ -13,6 +13,7 @@ from utils.db import init_db
 from utils.data_processor import (
     agregar_tudo, render_filtros_sidebar, calcular_risco_portfolio,
 )
+from utils.dashboard_executivo import calcular_marcos
 from utils.pdf_report import gerar_relatorio_risco_pdf
 
 init_db()
@@ -33,6 +34,7 @@ if df_f.empty:
     st.stop()
 
 risco = calcular_risco_portfolio(df_f, df_custos_raw)
+df_marcos_ve = calcular_marcos(df_f)
 
 # ── 1. KPIs ───────────────────────────────────────────────────────────────────
 n_alto  = int((risco["nivel_risco"] == "alto").sum())
@@ -143,6 +145,19 @@ else:
                 st.markdown("**Alertas:**")
                 for m in r["motivos"]:
                     st.markdown(f"- 🔴 {m}")
+
+            # Observações de marcos pendentes (com prev mas sem real)
+            if not df_marcos_ve.empty and "observacao" in df_marcos_ve.columns:
+                dm = df_marcos_ve[df_marcos_ve["projeto"] == r["projeto"]]
+                obs_pend = dm[
+                    dm["data_prevista"].notna() &
+                    dm["data_realizada"].isna() &
+                    dm["observacao"].str.strip().ne("")
+                ]
+                if not obs_pend.empty:
+                    st.markdown("**Observações de Marcos Pendentes:**")
+                    for _, mo in obs_pend.iterrows():
+                        st.markdown(f"- **{mo['marco']}:** {mo['observacao']}")
 
             if st.button(
                 "🔍 Ver detalhamento completo",

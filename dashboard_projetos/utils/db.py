@@ -67,6 +67,7 @@ COLUNAS_DB_ORCAMENTOS = [
     "data_inicio",
     "prev_viabilidade", "prev_qualidade", "prev_aprov_lancamento", "prev_lancamento",
     "real_viabilidade", "real_qualidade", "real_aprov_lancamento", "real_lancamento",
+    "obs_viabilidade", "obs_qualidade", "obs_aprov_lancamento", "obs_lancamento",
 ]
 
 # ── Status do Projeto — opções fixas do dropdown ──────────────────────────────
@@ -107,6 +108,8 @@ TIPOS_ORCAMENTOS = {
     "prev_aprov_lancamento": "TEXT", "prev_lancamento": "TEXT",
     "real_viabilidade": "TEXT", "real_qualidade": "TEXT",
     "real_aprov_lancamento": "TEXT", "real_lancamento": "TEXT",
+    "obs_viabilidade": "TEXT", "obs_qualidade": "TEXT",
+    "obs_aprov_lancamento": "TEXT", "obs_lancamento": "TEXT",
 }
 
 
@@ -308,6 +311,10 @@ def salvar_orcamento(
     real_lancamento: str | None,
     nome_projeto_editado: str | None = None,
     status_projeto: str | None = None,
+    obs_viabilidade: str | None = None,
+    obs_qualidade: str | None = None,
+    obs_aprov_lancamento: str | None = None,
+    obs_lancamento: str | None = None,
 ) -> None:
     with _engine().begin() as con:
         con.execute(text("""
@@ -315,11 +322,13 @@ def salvar_orcamento(
                 projeto, nome_projeto_editado, orcamento_previsto, status_projeto, data_inicio,
                 prev_viabilidade, prev_qualidade, prev_aprov_lancamento, prev_lancamento,
                 real_viabilidade, real_qualidade, real_aprov_lancamento, real_lancamento,
+                obs_viabilidade, obs_qualidade, obs_aprov_lancamento, obs_lancamento,
                 atualizado_em
             ) VALUES (
                 :projeto, :nome_projeto_editado, :orcamento_previsto, :status_projeto, :data_inicio,
                 :prev_viabilidade, :prev_qualidade, :prev_aprov_lancamento, :prev_lancamento,
                 :real_viabilidade, :real_qualidade, :real_aprov_lancamento, :real_lancamento,
+                :obs_viabilidade, :obs_qualidade, :obs_aprov_lancamento, :obs_lancamento,
                 :atualizado_em
             )
             ON CONFLICT (projeto) DO UPDATE SET
@@ -335,6 +344,10 @@ def salvar_orcamento(
                 real_qualidade          = excluded.real_qualidade,
                 real_aprov_lancamento   = excluded.real_aprov_lancamento,
                 real_lancamento         = excluded.real_lancamento,
+                obs_viabilidade         = excluded.obs_viabilidade,
+                obs_qualidade           = excluded.obs_qualidade,
+                obs_aprov_lancamento    = excluded.obs_aprov_lancamento,
+                obs_lancamento          = excluded.obs_lancamento,
                 atualizado_em           = excluded.atualizado_em
         """), {
             "projeto": projeto,
@@ -350,6 +363,10 @@ def salvar_orcamento(
             "real_qualidade": real_qualidade,
             "real_aprov_lancamento": real_aprov_lancamento,
             "real_lancamento": real_lancamento,
+            "obs_viabilidade": obs_viabilidade or None,
+            "obs_qualidade": obs_qualidade or None,
+            "obs_aprov_lancamento": obs_aprov_lancamento or None,
+            "obs_lancamento": obs_lancamento or None,
             "atualizado_em": _agora(),
         })
 

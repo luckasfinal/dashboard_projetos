@@ -494,6 +494,7 @@ def agregar_tudo() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         "data_inicio",
         "prev_viabilidade", "prev_qualidade", "prev_aprov_lancamento", "prev_lancamento",
         "real_viabilidade", "real_qualidade", "real_aprov_lancamento", "real_lancamento",
+        "obs_viabilidade", "obs_qualidade", "obs_aprov_lancamento", "obs_lancamento",
     ]
     if not df_orc.empty:
         df_orc_sel = df_orc.reindex(columns=COLUNAS_ORC)
