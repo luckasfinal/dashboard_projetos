@@ -88,6 +88,16 @@ def _parse_dt(val):
         return None
 
 
+def _cell(val) -> str:
+    """Converts any cell value to string, replacing NaN/None/empty with '—'."""
+    if val is None:
+        return "—"
+    if isinstance(val, float) and pd.isna(val):
+        return "—"
+    s = str(val).strip()
+    return s if s and s.lower() not in ("nan", "none", "nat") else "—"
+
+
 def _fig_bytes(fig) -> bytes:
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=150, bbox_inches="tight",
@@ -629,6 +639,434 @@ def gerar_relatorio_risco_pdf(
         est["rodape"]
     ))
 
+    doc.build(story)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+# ── Charts matplotlib para o relatório executivo ──────────────────────────────
+_CORES_EXEC = [_AZUL_M, _VERDE_M, _VERM_M, _AMAR_M, _CINZ_M,
+               "#7c3aed", "#db2777", "#0891b2", _AMAR2_M]
+
+
+def _png_burn_rate_exec(df_br: pd.DataFrame):
+    if not _MPL_OK or df_br.empty:
+        return None
+    try:
+        label_col = "nome_projeto" if "nome_projeto" in df_br.columns else "projeto"
+        top_projs = (
+            df_br.groupby("projeto")["custo_acumulado"].max()
+            .nlargest(8).index.tolist()
+        )
+        fig, ax = plt.subplots(figsize=(10.5, 4.0))
+        fig.patch.set_facecolor(_BG)
+        ax.set_facecolor(_BG)
+        for i, proj in enumerate(top_projs):
+            df_p = df_br[df_br["projeto"] == proj].sort_values("mes_ref")
+            try:
+                xs = pd.to_datetime(df_p["mes_ref"] + "-01")
+            except Exception:
+                continue
+            label = str(df_p[label_col].iloc[0])[:30] if not df_p.empty else proj[:20]
+            ax.plot(xs, df_p["custo_acumulado"], marker="o", markersize=3,
+                    linewidth=1.8, color=_CORES_EXEC[i % len(_CORES_EXEC)], label=label)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b/%y"))
+        ax.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha="right",
+                 color=_TEXT, fontsize=7.5)
+        ax.yaxis.set_major_formatter(
+            plt.FuncFormatter(lambda v, _: f"R${v/1000:.0f}k" if v >= 1000 else f"R${v:.0f}")
+        )
+        ax.tick_params(colors=_TEXT, labelsize=8)
+        for sp in ax.spines.values():
+            sp.set_edgecolor(_GRID)
+        ax.grid(color=_GRID, alpha=0.4, linewidth=0.5)
+        ax.set_title("Burn Rate — Custo Acumulado por Projeto",
+                     color=_TEXT, fontsize=9, pad=6, loc="left")
+        ax.legend(facecolor=_BG, edgecolor=_GRID, labelcolor=_TEXT,
+                  fontsize=7, loc="upper left", ncol=2)
+        fig.tight_layout(pad=0.5)
+        return _fig_bytes(fig)
+    except Exception:
+        return None
+
+
+def _png_distribuicao_custos_exec(df_cat: pd.DataFrame):
+    if not _MPL_OK or df_cat.empty:
+        return None
+    try:
+        cat_col = "conta" if "conta" in df_cat.columns else "categoria_custo"
+        total = df_cat.groupby(cat_col)["total_custo"].sum().reset_index()
+        grand = total["total_custo"].sum()
+        if grand <= 0:
+            return None
+        total["pct"] = total["total_custo"] / grand * 100
+        principais = total[total["pct"] >= 3].copy()
+        outros = total[total["pct"] < 3]["total_custo"].sum()
+        if outros > 0:
+            principais = pd.concat([
+                principais,
+                pd.DataFrame([{cat_col: "Outros", "total_custo": outros, "pct": outros/grand*100}])
+            ], ignore_index=True)
+        labels = [str(l)[:30] for l in principais[cat_col]]
+        values = principais["total_custo"].tolist()
+        fig, ax = plt.subplots(figsize=(7, 4))
+        fig.patch.set_facecolor(_BG)
+        ax.set_facecolor(_BG)
+        wedges, _, autotexts = ax.pie(
+            values, labels=None, autopct="%1.0f%%",
+            colors=[_CORES_EXEC[i % len(_CORES_EXEC)] for i in range(len(labels))],
+            startangle=90, pctdistance=0.7,
+            wedgeprops={"linewidth": 0.5, "edgecolor": "white"},
+        )
+        for t in autotexts:
+            t.set_fontsize(7)
+            t.set_color(_TEXT)
+        ax.add_patch(plt.Circle((0, 0), 0.45, color=_BG))
+        ax.legend(wedges, labels, loc="center left", bbox_to_anchor=(1, 0.5),
+                  fontsize=7, facecolor=_BG, edgecolor=_GRID, labelcolor=_TEXT)
+        ax.set_title("Distribuição por Conta Contábil",
+                     color=_TEXT, fontsize=9, pad=6, loc="left")
+        fig.tight_layout(pad=0.5)
+        return _fig_bytes(fig)
+    except Exception:
+        return None
+
+
+def _png_matriz_exec(df_matriz: pd.DataFrame):
+    if not _MPL_OK or df_matriz.empty:
+        return None
+    try:
+        COR_QUAD = {
+            "Controlado":     _VERDE_M,
+            "Risco de Prazo": _AMAR_M,
+            "Risco de Custo": "#f97316",
+            "Crítico":        _VERM_M,
+        }
+        xmax = max(float(df_matriz["desvio_prazo_dias"].abs().max()) * 1.3, 30.0)
+        ymax = max(float(df_matriz["desvio_eac_pct"].abs().max()) * 1.3, 20.0)
+        fig, ax = plt.subplots(figsize=(10, 5))
+        fig.patch.set_facecolor(_BG)
+        ax.set_facecolor(_BG)
+        ax.axvline(0, color=_CINZ_M, linewidth=0.8, alpha=0.5)
+        ax.axhline(0, color=_CINZ_M, linewidth=0.8, alpha=0.5)
+        ax.text(-xmax * 0.97,  ymax * 0.90, "Risco de Custo", color="#f97316", fontsize=7.5, alpha=0.7)
+        ax.text( xmax * 0.03,  ymax * 0.90, "Crítico",        color=_VERM_M,  fontsize=7.5, alpha=0.7)
+        ax.text(-xmax * 0.97, -ymax * 0.97, "Controlado",     color=_VERDE_M, fontsize=7.5, alpha=0.7)
+        ax.text( xmax * 0.03, -ymax * 0.97, "Risco de Prazo", color=_AMAR_M,  fontsize=7.5, alpha=0.7)
+        for _, row in df_matriz.iterrows():
+            cor = COR_QUAD.get(row.get("quadrante", ""), _CINZ_M)
+            ax.scatter(row["desvio_prazo_dias"], row["desvio_eac_pct"],
+                       color=cor, s=80, zorder=5, edgecolors="white", linewidth=0.5)
+            ax.annotate(str(row.get("nome_projeto", ""))[:22],
+                        (row["desvio_prazo_dias"], row["desvio_eac_pct"]),
+                        textcoords="offset points", xytext=(6, 3),
+                        fontsize=6.5, color=_TEXT)
+        ax.set_xlim(-xmax, xmax)
+        ax.set_ylim(-ymax, ymax)
+        ax.set_xlabel("Desvio de Prazo (dias)", color=_TEXT, fontsize=8)
+        ax.set_ylabel("Desvio de Custo (%)",    color=_TEXT, fontsize=8)
+        ax.tick_params(colors=_TEXT, labelsize=7.5)
+        for sp in ax.spines.values():
+            sp.set_edgecolor(_GRID)
+        ax.grid(color=_GRID, alpha=0.35, linewidth=0.4)
+        ax.set_title("Matriz Executiva — Prazo × Custo",
+                     color=_TEXT, fontsize=9, pad=6, loc="left")
+        fig.tight_layout(pad=0.5)
+        return _fig_bytes(fig)
+    except Exception:
+        return None
+
+
+# ── Relatório Dashboard Executivo ─────────────────────────────────────────────
+def gerar_relatorio_executivo_pdf(
+    resumo: dict,
+    df_status: pd.DataFrame,
+    df_marcos: pd.DataFrame,
+    df_fp: pd.DataFrame,
+    df_cat: pd.DataFrame,
+    df_fc: pd.DataFrame,
+    df_matriz: pd.DataFrame,
+    df_br: pd.DataFrame,
+    filtros: dict,
+) -> bytes:
+    buf = io.BytesIO()
+    W = 267 * mm
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=15*mm, rightMargin=15*mm,
+        topMargin=14*mm, bottomMargin=14*mm,
+        title="Dashboard Executivo de Projetos",
+    )
+    est   = _estilos()
+    story = []
+    agora = datetime.now().strftime("%d/%m/%Y às %H:%M")
+
+    # Cabeçalho
+    story.append(Paragraph("Dashboard Executivo de Projetos", est["titulo"]))
+    story.append(Paragraph(f"Gerado em {agora}", est["subtitulo"]))
+    partes = []
+    for k, v in filtros.items():
+        if v and isinstance(v, (list, tuple)):
+            partes.append(
+                f"<b>{k}:</b> {', '.join(map(str, v)) if len(v) <= 4 else f'{len(v)} selecionados'}"
+            )
+    if partes:
+        story.append(Paragraph(" &nbsp;·&nbsp; ".join(partes), est["normal"]))
+    story.append(Spacer(1, 10))
+
+    # KPIs
+    story.append(Paragraph("Resumo Executivo", est["secao"]))
+    kpi_data = [
+        ["Projetos Ativos", "Com Atraso", "Horas Consumidas",
+         "Custos Acumulados", "% Médio Conclusão", "Atraso Médio"],
+        [
+            str(resumo.get("projetos_ativos", 0)),
+            str(resumo.get("projetos_com_atraso", 0)),
+            f"{resumo.get('horas_consumidas', 0):,.0f} h",
+            _fmt_brl(resumo.get("custos_acumulados", 0)),
+            f"{resumo.get('pct_medio_conclusao', 0)*100:.1f}%",
+            f"{resumo.get('prazo_medio_atraso', 0):.0f} dias",
+        ],
+    ]
+    kpi_tbl = Table(kpi_data, colWidths=[W / 6] * 6)
+    kpi_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0), AZUL),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME",      (0, 1), (-1, 1), "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, -1), 9),
+        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("BACKGROUND",    (0, 1), (-1, 1), CINZA_CLARO),
+        ("GRID",          (0, 0), (-1, -1), 0.5, colors.white),
+    ]))
+    story.append(kpi_tbl)
+    story.append(Spacer(1, 12))
+
+    # Status Geral
+    story.append(Paragraph("Status Geral dos Projetos", est["secao"]))
+    if not df_status.empty:
+        s_data = [["Projeto", "% Conc.", "Marcos Conc.", "Total", "Atraso (d)", "Horas", "Custo"]]
+        for _, r in df_status.iterrows():
+            pct    = float(r.get("pct_concluido", 0) or 0)
+            atraso_v = r.get("atraso_medio_dias", 0)
+            atraso = float(atraso_v) if atraso_v is not None and not (isinstance(atraso_v, float) and pd.isna(atraso_v)) else 0.0
+            s_data.append([
+                Paragraph(_cell(r.get("nome_projeto", ""))[:50], est["normal"]),
+                f"{pct*100:.0f}%",
+                str(int(r.get("marcos_concluidos", 0) or 0)),
+                str(int(r.get("marcos_totais", 0) or 0)),
+                f"{int(atraso)} d" if atraso > 0 else "—",
+                f"{float(r.get('horas_total', 0) or 0):,.0f}".replace(",", "."),
+                _fmt_brl(r.get("custo_total", 0)),
+            ])
+        lw_s = [W*.36, W*.09, W*.10, W*.08, W*.10, W*.12, W*.15]
+        s_tbl = Table(s_data, colWidths=lw_s, repeatRows=1)
+        s_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0), AZUL),
+            ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 7.5),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN",         (1, 1), (-1, -1), "RIGHT"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("GRID",          (0, 0), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, CINZA_CLARO]),
+        ]))
+        story.append(s_tbl)
+
+    # Marcos e Forecast de Prazo
+    story.append(PageBreak())
+    story.append(Paragraph("Análise de Marcos e Prazo", est["secao"]))
+    df_m_disp = df_marcos[df_marcos["data_prevista"].notna()].copy() if not df_marcos.empty else df_marcos
+    if not df_m_disp.empty:
+        tem_obs = "observacao" in df_m_disp.columns
+        m_data = [["Projeto", "Marco", "Previsto", "Realizado", "Desvio (d)", "Status"] + (["Observação"] if tem_obs else [])]
+        for _, r in df_m_disp.iterrows():
+            prev = str(r.get("data_prevista", ""))[:10] if pd.notna(r.get("data_prevista")) else "—"
+            real = str(r.get("data_realizada", ""))[:10] if pd.notna(r.get("data_realizada")) else "—"
+            dev  = r.get("desvio_dias")
+            row_cells = [
+                Paragraph(_cell(r.get("nome_projeto", ""))[:42], est["normal"]),
+                _cell(r.get("marco")),
+                prev, real,
+                f"{int(dev)} d" if pd.notna(dev) else "—",
+                _cell(r.get("status_marco")),
+            ]
+            if tem_obs:
+                obs_txt = _cell(r.get("observacao"))
+                row_cells.append(Paragraph(obs_txt[:80], est["normal"]) if obs_txt != "—" else "—")
+            m_data.append(row_cells)
+        if tem_obs:
+            lw_m = [W*.22, W*.16, W*.10, W*.10, W*.09, W*.09, W*.24]
+        else:
+            lw_m = [W*.29, W*.23, W*.12, W*.12, W*.12, W*.12]
+        m_tbl = Table(m_data, colWidths=lw_m, repeatRows=1)
+        status_col_idx = 5
+        estilo_m = [
+            ("BACKGROUND",    (0, 0), (-1, 0), AZUL),
+            ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 7.5),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("GRID",          (0, 0), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, CINZA_CLARO]),
+        ]
+        for i, (_, r) in enumerate(df_m_disp.iterrows(), start=1):
+            if r.get("status_marco") == "Atrasado":
+                estilo_m.append(("TEXTCOLOR", (status_col_idx, i), (status_col_idx, i), VERMELHO))
+                estilo_m.append(("FONTNAME",  (status_col_idx, i), (status_col_idx, i), "Helvetica-Bold"))
+        m_tbl.setStyle(TableStyle(estilo_m))
+        story.append(m_tbl)
+    story.append(Spacer(1, 12))
+
+    story.append(Paragraph("Forecast de Prazo", est["secao"]))
+    if not df_fp.empty:
+        fp_data = [["Projeto", "Data Planejada", "Atraso Médio (d)", "Forecast", "Desvio (d)"]]
+        for _, r in df_fp.iterrows():
+            atr_m = r.get("atraso_medio_dias", 0)
+            dev_t = r.get("desvio_total", 0)
+            fp_data.append([
+                Paragraph(_cell(r.get("nome_projeto", ""))[:48], est["normal"]),
+                str(r.get("data_planejada", ""))[:10] if pd.notna(r.get("data_planejada")) else "—",
+                f"{float(atr_m):.0f} d" if atr_m is not None and not (isinstance(atr_m, float) and pd.isna(atr_m)) else "—",
+                str(r.get("forecast", ""))[:10] if pd.notna(r.get("forecast")) else "—",
+                f"{float(dev_t):.0f} d" if dev_t is not None and not (isinstance(dev_t, float) and pd.isna(dev_t)) else "—",
+            ])
+        lw_fp = [W*.35, W*.16, W*.16, W*.16, W*.17]
+        fp_tbl = Table(fp_data, colWidths=lw_fp, repeatRows=1)
+        fp_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0), AZUL),
+            ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 7.5),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("GRID",          (0, 0), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, CINZA_CLARO]),
+        ]))
+        story.append(fp_tbl)
+
+    # Custos e Recursos
+    story.append(PageBreak())
+    story.append(Paragraph("Custos e Recursos", est["secao"]))
+    if not df_cat.empty:
+        png = _png_distribuicao_custos_exec(df_cat)
+        if png:
+            story.append(RLImage(io.BytesIO(png), width=W * 0.55, height=65*mm))
+            story.append(Spacer(1, 8))
+    if not df_br.empty:
+        png = _png_burn_rate_exec(df_br)
+        if png:
+            story.append(RLImage(io.BytesIO(png), width=W, height=75*mm))
+            story.append(Spacer(1, 8))
+
+    story.append(Paragraph("Forecast de Custo (EAC)", est["secao"]))
+    if not df_fc.empty:
+        fc_data = [["Projeto", "Custo Atual", "% Concl.", "EAC", "Orçamento", "Desvio EAC (%)"]]
+        for _, r in df_fc.iterrows():
+            pct = float(r.get("pct_concluido", 0) or 0)
+            eac = r.get("eac")
+            dev = r.get("desvio_eac_pct")
+            orc = float(r.get("orcamento", 0) or 0)
+            eac_ok = eac is not None and not (isinstance(eac, float) and pd.isna(eac))
+            dev_ok = dev is not None and not (isinstance(dev, float) and pd.isna(dev))
+            fc_data.append([
+                Paragraph(_cell(r.get("nome_projeto", ""))[:42], est["normal"]),
+                _fmt_brl(r.get("custo_atual", 0)),
+                f"{pct*100:.0f}%",
+                _fmt_brl(eac) if eac_ok else "—",
+                _fmt_brl(orc) if orc > 0 else "—",
+                f"{float(dev):.1f}%" if dev_ok else "—",
+            ])
+        lw_fc = [W*.30, W*.15, W*.10, W*.15, W*.15, W*.15]
+        fc_tbl = Table(fc_data, colWidths=lw_fc, repeatRows=1)
+        estilo_fc = [
+            ("BACKGROUND",    (0, 0), (-1, 0), AZUL),
+            ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 7.5),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN",         (1, 1), (-1, -1), "RIGHT"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("GRID",          (0, 0), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, CINZA_CLARO]),
+        ]
+        for i, (_, r) in enumerate(df_fc.iterrows(), start=1):
+            dev = r.get("desvio_eac_pct")
+            if dev is not None and dev > 0:
+                estilo_fc.append(("TEXTCOLOR", (5, i), (5, i), VERMELHO))
+                estilo_fc.append(("FONTNAME",  (5, i), (5, i), "Helvetica-Bold"))
+        fc_tbl.setStyle(TableStyle(estilo_fc))
+        story.append(fc_tbl)
+
+    # Estratégico
+    if not df_matriz.empty:
+        story.append(PageBreak())
+        story.append(Paragraph("Análise Estratégica — Matriz Prazo × Custo", est["secao"]))
+        png = _png_matriz_exec(df_matriz)
+        if png:
+            story.append(RLImage(io.BytesIO(png), width=W * 0.85, height=80*mm))
+            story.append(Spacer(1, 8))
+        story.append(Paragraph("Resumo de Riscos por Projeto", est["secao"]))
+        story.append(Paragraph(
+            "Desvio de Prazo: dias entre o lançamento previsto e o forecast (positivo = atraso). "
+            "Desvio de Custo: diferença percentual entre EAC e orçamento aprovado "
+            "(positivo = acima do orçamento).",
+            est["normal"],
+        ))
+        story.append(Spacer(1, 6))
+        mx_data = [["Projeto", "Desvio Prazo (d)", "Desvio Custo (%)", "Quadrante"]]
+        for _, r in df_matriz.iterrows():
+            dev_p_raw = r.get("desvio_prazo_dias", 0)
+            dev_p = float(dev_p_raw) if dev_p_raw is not None and not (isinstance(dev_p_raw, float) and pd.isna(dev_p_raw)) else 0.0
+            dev_c = r.get("desvio_eac_pct")
+            dev_c_ok = dev_c is not None and not (isinstance(dev_c, float) and pd.isna(dev_c))
+            mx_data.append([
+                Paragraph(_cell(r.get("nome_projeto", ""))[:50], est["normal"]),
+                f"{int(dev_p)} d",
+                f"{float(dev_c):.1f}%" if dev_c_ok else "—",
+                _cell(r.get("quadrante")),
+            ])
+        lw_mx = [W*.40, W*.20, W*.20, W*.20]
+        mx_tbl = Table(mx_data, colWidths=lw_mx, repeatRows=1)
+        estilo_mx = [
+            ("BACKGROUND",    (0, 0), (-1, 0), AZUL),
+            ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 8),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN",         (1, 1), (2, -1), "RIGHT"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("GRID",          (0, 0), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, CINZA_CLARO]),
+        ]
+        for i, (_, r) in enumerate(df_matriz.iterrows(), start=1):
+            quad = r.get("quadrante", "")
+            if quad == "Crítico":
+                estilo_mx.append(("TEXTCOLOR", (3, i), (3, i), VERMELHO))
+                estilo_mx.append(("FONTNAME",  (3, i), (3, i), "Helvetica-Bold"))
+            elif quad in ("Risco de Prazo", "Risco de Custo"):
+                estilo_mx.append(("TEXTCOLOR", (3, i), (3, i), AMARELO_TBL))
+        mx_tbl.setStyle(TableStyle(estilo_mx))
+        story.append(mx_tbl)
+
+    # Rodapé
+    story.append(Spacer(1, 14))
+    story.append(Paragraph(
+        "Relatório gerado automaticamente pelo Dashboard de Projetos. "
+        "Valores baseados nos dados importados até a data de geração.",
+        est["rodape"],
+    ))
     doc.build(story)
     buf.seek(0)
     return buf.getvalue()
