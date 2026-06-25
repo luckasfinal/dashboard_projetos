@@ -518,22 +518,37 @@ def grafico_evolucao_fisica(df_status: pd.DataFrame) -> go.Figure:
 
 
 def grafico_custos_empilhados(df_cat: pd.DataFrame) -> go.Figure:
-    """Barras empilhadas custo por projeto e categoria."""
-    eixo = "nome_projeto" if "nome_projeto" in df_cat.columns else "projeto"
-    nomes = df_cat[eixo].unique()[:LIMITE_GRAFICO]
+    """Barras empilhadas custo por projeto e conta contábil (top 8 contas)."""
+    cat_col = "conta" if "conta" in df_cat.columns else "categoria_custo"
+    eixo    = "nome_projeto" if "nome_projeto" in df_cat.columns else "projeto"
+    nomes   = df_cat[eixo].unique()[:LIMITE_GRAFICO]
+    top_cats = (
+        df_cat.groupby(cat_col)["total_custo"].sum()
+        .nlargest(8).index.tolist()
+    )
     fig = go.Figure()
-    for cat in ["Mão de obra", "Terceiros", "Materiais", "Viagens", "Outras"]:
-        df_c = df_cat[df_cat["categoria_custo"] == cat]
+    for i, cat in enumerate(top_cats):
+        df_c   = df_cat[df_cat[cat_col] == cat]
         valores = [float(df_c[df_c[eixo] == p]["total_custo"].sum()) for p in nomes]
         if any(v > 0 for v in valores):
+            label = str(cat)[:35]
             fig.add_trace(go.Bar(
-                name=cat, x=list(nomes), y=valores,
-                marker_color=CORES_CATEGORIA.get(cat, "#94a3b8"),
-                hovertemplate=f"<b>%{{x}}</b><br>{cat}: R$ %{{y:,.0f}}<extra></extra>",
+                name=label, x=list(nomes), y=valores,
+                marker_color=CORES[i % len(CORES)],
+                hovertemplate=f"<b>%{{x}}</b><br>{label}: R$ %{{y:,.0f}}<extra></extra>",
+            ))
+    outros = df_cat[~df_cat[cat_col].isin(top_cats)]
+    if not outros.empty:
+        outros_vals = [float(outros[outros[eixo] == p]["total_custo"].sum()) for p in nomes]
+        if any(v > 0 for v in outros_vals):
+            fig.add_trace(go.Bar(
+                name="Outros", x=list(nomes), y=outros_vals,
+                marker_color="#94a3b8",
+                hovertemplate="<b>%{x}</b><br>Outros: R$ %{y:,.0f}<extra></extra>",
             ))
     fig.update_layout(
         **LAYOUT_BASE,
-        title="<b>Custos por Projeto e Categoria</b>",
+        title="<b>Custos por Projeto e Conta Contábil</b>",
         barmode="stack", legend=_LEGEND_H, margin=_MARGIN,
         yaxis=dict(tickprefix="R$ ", tickformat=",.0f", gridcolor="rgba(128,128,128,.15)"),
         xaxis=dict(tickangle=-30),
@@ -542,38 +557,53 @@ def grafico_custos_empilhados(df_cat: pd.DataFrame) -> go.Figure:
 
 
 def grafico_distribuicao_custos(df_cat: pd.DataFrame) -> go.Figure:
-    """Donut de custos por categoria."""
-    total = df_cat.groupby("categoria_custo")["total_custo"].sum().reset_index()
+    """Donut de custos por conta contábil (agrupa <3% em Outros)."""
+    cat_col    = "conta" if "conta" in df_cat.columns else "categoria_custo"
+    total      = df_cat.groupby(cat_col)["total_custo"].sum().reset_index()
+    grand_total = total["total_custo"].sum()
+    if grand_total > 0:
+        total["pct"] = total["total_custo"] / grand_total * 100
+        principais   = total[total["pct"] >= 3].copy()
+        outros_val   = total[total["pct"] < 3]["total_custo"].sum()
+        if outros_val > 0:
+            principais = pd.concat([
+                principais,
+                pd.DataFrame([{cat_col: "Outros", "total_custo": outros_val}]),
+            ], ignore_index=True)
+        total = principais
     fig = go.Figure(go.Pie(
-        labels=total["categoria_custo"],
+        labels=total[cat_col],
         values=total["total_custo"],
         hole=0.45,
-        marker_colors=[CORES_CATEGORIA.get(c, "#94a3b8") for c in total["categoria_custo"]],
-        textinfo="label+percent",
+        marker_colors=[CORES[i % len(CORES)] for i in range(len(total))],
+        textinfo="percent",
         hovertemplate="<b>%{label}</b><br>R$ %{value:,.0f} · %{percent}<extra></extra>",
     ))
     fig.update_layout(
         **LAYOUT_BASE,
-        title="<b>Distribuição de Custos por Categoria</b>",
-        margin=_MARGIN, legend=_LEGEND_H,
+        title="<b>Distribuição por Conta Contábil</b>",
+        margin=dict(l=20, r=160, t=44, b=20),
+        legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02, font=dict(size=11)),
     )
     return fig
 
 
 def grafico_burn_rate_temporal(df_br: pd.DataFrame) -> go.Figure:
     """Linha de custo acumulado mensal (top 10 projetos)."""
+    label_col = "nome_projeto" if "nome_projeto" in df_br.columns else "projeto"
     top_projs = (
         df_br.groupby("projeto")["custo_acumulado"].max()
         .nlargest(10).index.tolist()
     )
     fig = go.Figure()
     for i, proj in enumerate(top_projs):
-        df_p = df_br[df_br["projeto"] == proj].sort_values("mes_ref")
+        df_p  = df_br[df_br["projeto"] == proj].sort_values("mes_ref")
+        label = str(df_p[label_col].iloc[0])[:35] if not df_p.empty else proj[:20]
         fig.add_trace(go.Scatter(
             x=df_p["mes_ref"], y=df_p["custo_acumulado"],
-            mode="lines+markers", name=proj[:20],
+            mode="lines+markers", name=label,
             line=dict(color=CORES[i % len(CORES)]),
-            hovertemplate=f"<b>{proj[:20]}</b><br>%{{x}}<br>Acumulado: R$ %{{y:,.0f}}<extra></extra>",
+            hovertemplate=f"<b>{label}</b><br>%{{x}}<br>Acumulado: R$ %{{y:,.0f}}<extra></extra>",
         ))
     fig.update_layout(
         **LAYOUT_BASE,
