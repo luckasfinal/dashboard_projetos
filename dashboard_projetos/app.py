@@ -116,9 +116,10 @@ pages = {
         st.Page(str(ROOT / "pages" / "1_upload.py"),    title="Upload de Arquivos",   icon="📤"),
     ],
     "📊 Análises": [
-        st.Page(str(ROOT / "pages" / "4_visao_executiva.py"), title="Visão Executiva", icon="🧭"),
-        st.Page(str(ROOT / "pages" / "2_dashboard.py"), title="Dashboard Financeiro", icon="📊"),
-        st.Page(str(ROOT / "pages" / "3_projetos.py"),  title="Andamento dos Projetos", icon="📈"),
+        st.Page(str(ROOT / "pages" / "4_visao_executiva.py"),     title="Visão Executiva",        icon="🧭"),
+        st.Page(str(ROOT / "pages" / "5_dashboard_executivo.py"), title="Dashboard Executivo",    icon="📋"),
+        st.Page(str(ROOT / "pages" / "2_dashboard.py"),           title="Dashboard Financeiro",   icon="📊"),
+        st.Page(str(ROOT / "pages" / "3_projetos.py"),            title="Andamento dos Projetos", icon="📈"),
     ],
 }
 
