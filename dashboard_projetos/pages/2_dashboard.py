@@ -116,6 +116,28 @@ l2c3.metric(
     formata_brl(custo_h_medio),  # valores por hora são pequenos — mantém cheio
 )
 
+# ── Headline situacional ───────────────────────────────────────────────────────
+if exc["n_estouro"] > 0:
+    st.error(
+        f"⚠️ **{exc['n_estouro']} projeto(s) acima do orçamento** com excedente de "
+        f"**{formata_brl_curto(exc['excedente_total'])}**. Revise os custos antes do próximo ciclo."
+    )
+elif pct_consumido is not None and pct_consumido > 90:
+    st.warning(
+        f"🟡 Portfólio com **{pct_consumido:.0f}%** do orçamento consumido — "
+        "fique atento ao ritmo de gastos para os próximos meses."
+    )
+elif saldo_total is not None and saldo_total > 0:
+    st.success(
+        f"✅ Saldo consolidado de **{formata_brl_curto(saldo_total)}** disponível — "
+        f"consumo atual de {pct_consumido:.0f}% do orçamento total." if pct_consumido else
+        f"✅ Saldo consolidado de **{formata_brl_curto(saldo_total)}** disponível."
+    )
+else:
+    st.info(f"📊 {n_projetos} projetos no filtro atual — sem orçamento cadastrado para comparação.")
+
+st.markdown("")
+
 # C2 — Burn rate com seta de tendência
 if not df_c_f.empty and mes_col:
     _df_br_dash = calcular_burn_rate(df_c_f)
