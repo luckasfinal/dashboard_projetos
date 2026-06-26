@@ -29,6 +29,9 @@ if df_dashboard.empty:
 
 df_f = render_filtros_sidebar(df_dashboard, df_custos_raw)
 
+if "status_projeto" in df_f.columns:
+    df_f = df_f[df_f["status_projeto"] != "Cancelado"]
+
 if df_f.empty:
     st.info("Nenhum projeto encontrado para os filtros selecionados.")
     st.stop()

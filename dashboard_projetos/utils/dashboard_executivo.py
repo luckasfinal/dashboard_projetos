@@ -166,12 +166,13 @@ def calcular_forecast_custo(df_f: pd.DataFrame, df_marcos: pd.DataFrame) -> pd.D
         eac   = (custo / pct) if pct > 0 else None
         desvio = ((eac - orc) / orc * 100) if (eac is not None and orc > 0) else None
         linhas.append({
-            "nome_projeto":  row.get("nome_projeto", proj),
-            "custo_atual":   custo,
-            "pct_concluido": pct,
-            "eac":           eac,
-            "orcamento":     orc,
+            "nome_projeto":   row.get("nome_projeto", proj),
+            "custo_atual":    custo,
+            "pct_concluido":  pct,
+            "eac":            eac,
+            "orcamento":      orc,
             "desvio_eac_pct": desvio,
+            "cpi":            _cpi(custo, orc, pct),
         })
     return pd.DataFrame(linhas)
 
@@ -346,3 +347,179 @@ def calcular_recursos(df_f: pd.DataFrame, df_horas_f: pd.DataFrame) -> pd.DataFr
     )
     nomes = df_f[["projeto", "nome_projeto"]].drop_duplicates("projeto")
     return agg.merge(nomes, on="projeto", how="left")
+
+
+# ─────────────────────────────────────────────
+# CPI — Cost Performance Index
+# ─────────────────────────────────────────────
+
+def _cpi(custo: float, orc: float, pct: float) -> float | None:
+    """CPI = BCWP / ACWP = (orc × pct) / custo. None se dados insuficientes."""
+    if custo <= 0 or orc <= 0 or pct <= 0:
+        return None
+    return (orc * pct) / custo
+
+
+def calcular_cpi_projeto(row) -> float | None:
+    """
+    CPI para uma linha de projeto (dict ou pd.Series).
+    Usa MARCOS_CONFIG para somar os pesos dos marcos com data_realizada preenchida.
+    Retorna None se custo, orçamento ou % concluído forem zero.
+    """
+    custo = float(row.get("valor_total", 0) or 0)
+    orc   = float(row.get("orcamento", 0) or 0)
+    pct   = sum(
+        peso
+        for _, col_real, _, peso in MARCOS_CONFIG
+        if _parse_data(row.get(col_real)) is not None
+    )
+    return _cpi(custo, orc, pct)
+
+
+# ─────────────────────────────────────────────
+# Home Executiva — funções de portfólio
+# ─────────────────────────────────────────────
+
+_MARCOS_HOME: list[tuple[str, str, str]] = [
+    ("prev_viabilidade",      "real_viabilidade",      "Viabilidade"),
+    ("prev_qualidade",        "real_qualidade",        "Qualidade"),
+    ("prev_aprov_lancamento", "real_aprov_lancamento", "Aprov. Lançamento"),
+    ("prev_lancamento",       "real_lancamento",       "Lançamento"),
+]
+
+
+def calcular_proximos_marcos(df_f: pd.DataFrame, dias: int = 7) -> pd.DataFrame:
+    """Retorna marcos com data prevista em [hoje, hoje+dias] e sem data realizada."""
+    hoje   = datetime.today().date()
+    limite = hoje + timedelta(days=dias)
+    linhas: list[dict] = []
+    for _, row in df_f.iterrows():
+        for col_prev, col_real, label in _MARCOS_HOME:
+            prev_d = _parse_data(row.get(col_prev))
+            real_d = _parse_data(row.get(col_real))
+            if prev_d is not None and real_d is None and hoje <= prev_d <= limite:
+                linhas.append({
+                    "Projeto":        row.get("nome_projeto", row.get("projeto")),
+                    "Marco":          label,
+                    "Data Prevista":  prev_d.strftime("%d/%m/%Y"),
+                    "Dias Restantes": (prev_d - hoje).days,
+                })
+    if not linhas:
+        return pd.DataFrame(columns=["Projeto", "Marco", "Data Prevista", "Dias Restantes"])
+    return pd.DataFrame(linhas).sort_values("Dias Restantes").reset_index(drop=True)
+
+
+def calcular_marcos_vencidos(df_f: pd.DataFrame) -> pd.DataFrame:
+    """Retorna marcos com data prevista < hoje e sem data realizada."""
+    hoje = datetime.today().date()
+    linhas: list[dict] = []
+    for _, row in df_f.iterrows():
+        for col_prev, col_real, label in _MARCOS_HOME:
+            prev_d = _parse_data(row.get(col_prev))
+            real_d = _parse_data(row.get(col_real))
+            if prev_d is not None and real_d is None and prev_d < hoje:
+                linhas.append({
+                    "Projeto":       row.get("nome_projeto", row.get("projeto")),
+                    "Marco":         label,
+                    "Data Prevista": prev_d.strftime("%d/%m/%Y"),
+                    "Dias de Atraso": (hoje - prev_d).days,
+                })
+    if not linhas:
+        return pd.DataFrame(columns=["Projeto", "Marco", "Data Prevista", "Dias de Atraso"])
+    return pd.DataFrame(linhas).sort_values("Dias de Atraso", ascending=False).reset_index(drop=True)
+
+
+def calcular_kpis_home(df_dashboard: pd.DataFrame, risco: pd.DataFrame) -> dict:
+    """Retorna KPIs consolidados para a Home Executiva."""
+    n_ativos = len(df_dashboard)
+
+    if risco.empty:
+        n_alto = n_medio = n_baixo = 0
+        exposicao = atraso_medio = 0.0
+    else:
+        n_alto  = int((risco["nivel_risco"] == "alto").sum())
+        n_medio = int((risco["nivel_risco"] == "medio").sum())
+        n_baixo = int((risco["nivel_risco"] == "baixo").sum())
+        mask_estouro = risco["pct_projetado"].notna() & (risco["pct_projetado"] > 100)
+        if mask_estouro.any():
+            exposicao = float(
+                risco.loc[mask_estouro].apply(
+                    lambda r: r["orcamento"] * (r["pct_projetado"] / 100 - 1), axis=1
+                ).sum()
+            )
+        else:
+            exposicao = 0.0
+        atraso_medio = float(risco["dias_atraso_max"].mean())
+
+    consumo_medio = 0.0
+    if (
+        not df_dashboard.empty
+        and "orcamento" in df_dashboard.columns
+        and "pct_orcamento" in df_dashboard.columns
+    ):
+        df_com_orc = df_dashboard[df_dashboard["orcamento"] > 0]
+        if not df_com_orc.empty:
+            consumo_medio = float(df_com_orc["pct_orcamento"].mean())
+
+    return {
+        "n_ativos":            n_ativos,
+        "n_alto_risco":        n_alto,
+        "n_medio_risco":       n_medio,
+        "n_baixo_risco":       n_baixo,
+        "exposicao_financeira": exposicao,
+        "consumo_medio_pct":   consumo_medio,
+        "atraso_medio_dias":   atraso_medio,
+    }
+
+
+# ─────────────────────────────────────────────
+# Analytics Executivos — Benchmarking + Saúde
+# ─────────────────────────────────────────────
+
+def calcular_benchmarking_segmento(df_f: pd.DataFrame) -> pd.DataFrame:
+    """Agrupa projetos por segmento, retorna métricas médias por segmento."""
+    if df_f.empty or "segmento" not in df_f.columns:
+        return pd.DataFrame(
+            columns=["segmento", "n_projetos", "consumo_medio_pct", "custo_total", "horas_total"]
+        )
+    df_s = df_f[
+        df_f["segmento"].notna()
+        & (df_f["segmento"].astype(str).str.strip() != "")
+    ].copy()
+    if df_s.empty:
+        return pd.DataFrame(
+            columns=["segmento", "n_projetos", "consumo_medio_pct", "custo_total", "horas_total"]
+        )
+    return (
+        df_s.groupby("segmento")
+        .agg(
+            n_projetos=("projeto", "count"),
+            consumo_medio_pct=("pct_orcamento", "mean"),
+            custo_total=("valor_total", "sum"),
+            horas_total=("horas_total", "sum"),
+        )
+        .reset_index()
+        .sort_values("custo_total", ascending=False)
+    )
+
+
+def calcular_indice_saude(
+    pct_orcamento: float, dias_atraso_max: int, status: str = ""
+) -> int:
+    """Índice de saúde 0–100. Maior = mais saudável."""
+    score = 100
+    if pct_orcamento > 100:
+        score -= 20
+    elif pct_orcamento > 80:
+        score -= 10
+    if dias_atraso_max > 30:
+        score -= 30
+    elif dias_atraso_max > 0:
+        score -= 15
+    if str(status).strip() == "Stand by":
+        score -= 10
+    elif str(status).strip() == "Cancelado":
+        score -= 20
+    if 0 < pct_orcamento < 60:
+        score += 10
+    return max(0, min(100, score))
