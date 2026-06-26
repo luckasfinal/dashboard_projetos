@@ -10,12 +10,13 @@ import pandas as pd
 import streamlit as st
 from utils.db import init_db
 from utils.data_processor import (
-    agregar_tudo, render_filtros_sidebar, formata_brl_curto,
+    agregar_tudo, render_filtros_sidebar, formata_brl_curto, calcular_risco_portfolio,
 )
 from utils.dashboard_executivo import (
     calcular_marcos, calcular_resumo_executivo, calcular_status_projetos,
     calcular_recursos, calcular_burn_rate,
     calcular_forecast_prazo, calcular_forecast_custo, calcular_matriz_prazo_custo,
+    calcular_saude_portfolio, calcular_burn_rate_tendencia, calcular_benchmarking_segmento,
 )
 from utils import charts
 from utils.pdf_report import gerar_relatorio_executivo_pdf
@@ -92,6 +93,11 @@ if not df_custos_f.empty and "mes_ref" in df_custos_f.columns:
 else:
     df_br = pd.DataFrame()
 
+br_trend  = calcular_burn_rate_tendencia(df_br)
+risco_exec = calcular_risco_portfolio(df_f, df_custos_raw)
+df_saude  = calcular_saude_portfolio(df_f, risco_exec)
+df_bench  = calcular_benchmarking_segmento(df_f)
+
 if not df_custos_f.empty and "conta" in df_custos_f.columns and "centro_de_custo" in df_custos_f.columns:
     nomes_proj = df_f[["projeto", "nome_projeto"]].drop_duplicates()
     df_cat = (
@@ -134,6 +140,12 @@ with tab_resumo:
     }
     if "status_projeto" in df_status_disp.columns:
         colunas_exib["status_projeto"] = "Status"
+    if not df_saude.empty:
+        df_status_disp = df_status_disp.merge(
+            df_saude[["projeto", "saude", "classificacao"]], on="projeto", how="left"
+        )
+        colunas_exib["saude"] = "Saúde"
+        colunas_exib["classificacao"] = "Classificação"
     df_disp = df_status_disp[[c for c in colunas_exib if c in df_status_disp.columns]].copy()
     df_disp = df_disp.rename(columns=colunas_exib)
     df_disp["% Concluído"] = (df_disp["% Concluído"] * 100).round(1)
@@ -146,8 +158,15 @@ with tab_resumo:
             ),
             "Custo": st.column_config.NumberColumn(format="R$ %.0f"),
             "Horas": st.column_config.NumberColumn(format="%.0f h"),
+            "Saúde":  st.column_config.ProgressColumn(format="%d", min_value=0, max_value=100),
         },
     )
+
+    if not df_saude.empty:
+        st.divider()
+        st.subheader("🏆 Ranking de Saúde do Portfólio")
+        st.caption("Índice 0–100. Penalidades por custo acima do orçamento, atraso e Stand by; bônus por eficiência.")
+        st.plotly_chart(charts.grafico_saude_portfolio(df_saude), use_container_width=True)
 
 # ── TAB 2: PRAZO & MARCOS ─────────────────────────────────────────────────────
 with tab_prazo:
@@ -218,6 +237,23 @@ with tab_custos:
     st.divider()
     st.subheader("Burn Rate")
     if not df_br.empty:
+        br_m3 = br_trend["media_3m"]
+        br_delta = br_trend["delta_pct"]
+        br_tend  = br_trend["tendencia"]
+        _br_delta_str = (
+            f"{br_tend} {br_delta:+.1f}% vs trimestre anterior"
+            if br_delta is not None else None
+        )
+        _br_delta_color = (
+            "inverse" if br_delta is not None and br_delta > 0 else "normal"
+        )
+        st.metric(
+            "📊 Burn rate médio — últimos 3 meses",
+            formata_brl_curto(br_m3),
+            delta=_br_delta_str,
+            delta_color=_br_delta_color,
+            help="Média mensal de desembolso nos últimos 3 meses de dados disponíveis.",
+        )
         st.plotly_chart(charts.grafico_burn_rate_temporal(df_br), use_container_width=True)
     else:
         st.info("Sem dados de custo mensais para exibir burn rate.")
@@ -303,6 +339,26 @@ with tab_estrategico:
             column_config={
                 "Desvio Prazo (d)": st.column_config.NumberColumn(format="%.0f d"),
                 "Desvio Custo (%)": st.column_config.NumberColumn(format="%.1f%%"),
+            },
+        )
+
+    if not df_bench.empty:
+        st.divider()
+        st.subheader("📦 Benchmarking por Segmento")
+        st.caption("Comparativo de custo total e consumo médio de orçamento agrupado por segmento de negócio.")
+        st.plotly_chart(charts.grafico_benchmarking_segmento(df_bench), use_container_width=True)
+        st.dataframe(
+            df_bench.rename(columns={
+                "segmento": "Segmento", "n_projetos": "Projetos",
+                "consumo_medio_pct": "Consumo Médio (%)",
+                "custo_total": "Custo Total (R$)", "horas_total": "Horas Total",
+            }),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Custo Total (R$)":    st.column_config.NumberColumn(format="R$ %.0f"),
+                "Consumo Médio (%)":   st.column_config.NumberColumn(format="%.1f%%"),
+                "Horas Total":         st.column_config.NumberColumn(format="%.0f h"),
             },
         )
 

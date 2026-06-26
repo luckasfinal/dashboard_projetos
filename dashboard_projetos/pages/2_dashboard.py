@@ -14,6 +14,7 @@ from utils.data_processor import (
 )
 from utils.pdf_report import gerar_relatorio_pdf
 from utils import charts
+from utils.dashboard_executivo import calcular_burn_rate, calcular_burn_rate_tendencia
 
 init_db()
 
@@ -114,6 +115,23 @@ l2c3.metric(
     "📐 Custo Médio/Hora",
     formata_brl(custo_h_medio),  # valores por hora são pequenos — mantém cheio
 )
+
+# C2 — Burn rate com seta de tendência
+if not df_c_f.empty and mes_col:
+    _df_br_dash = calcular_burn_rate(df_c_f)
+    _br_t = calcular_burn_rate_tendencia(_df_br_dash)
+    if _br_t["media_3m"] > 0:
+        _br_delta_str = (
+            f"{_br_t['tendencia']} {_br_t['delta_pct']:+.1f}% vs trimestre anterior"
+            if _br_t["delta_pct"] is not None else None
+        )
+        st.metric(
+            "🔥 Burn Rate médio — últimos 3 meses",
+            formata_brl_curto(_br_t["media_3m"]),
+            delta=_br_delta_str,
+            delta_color="inverse" if (_br_t["delta_pct"] or 0) > 0 else "normal",
+            help="Média mensal de desembolso nos últimos 3 meses disponíveis nos dados filtrados.",
+        )
 
 st.divider()
 

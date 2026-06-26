@@ -316,11 +316,33 @@ with tab_resumo:
 
     st.divider()
 
+    # ── Gantt do Portfólio ────────────────────────────────────────────────────
+    st.subheader("📊 Gantt do Portfólio")
+    fig_gantt = charts.grafico_gantt_portfolio(df_f)
+    if fig_gantt is not None:
+        st.caption("Barras de data de início até lançamento previsto/realizado, coloridas por status.")
+        st.plotly_chart(fig_gantt, use_container_width=True, key="gantt_portfolio")
+    else:
+        st.caption("ℹ️ Nenhum projeto com datas de início e lançamento cadastradas.")
+
+    st.divider()
+
     # ── Esforço (horas) por projeto ───────────────────────────────────────────
     st.subheader("⏱️ Horas por Projeto")
     st.plotly_chart(charts.grafico_horas_por_projeto(df_f),
                     use_container_width=True, key="horas_por_projeto_resumo")
     aviso_truncamento(len(df_f))
+
+    st.divider()
+
+    # ── Top colaboradores por horas ───────────────────────────────────────────
+    st.subheader("👥 Top Colaboradores por Horas")
+    df_h_resumo = df_horas_raw[df_horas_raw["c_custo"].isin(df_f["projeto"])] if not df_horas_raw.empty else df_horas_raw
+    if not df_h_resumo.empty:
+        st.plotly_chart(charts.grafico_top_colaboradores(df_h_resumo, top_n=10),
+                        use_container_width=True, key="top_colaboradores")
+    else:
+        st.caption("ℹ️ Sem dados de horas para os filtros atuais.")
 
     st.divider()
 
