@@ -39,15 +39,43 @@ if df_f.empty:
 risco = calcular_risco_portfolio(df_f, df_custos_raw)
 df_marcos_ve = calcular_marcos(df_f)
 
-# ── 1. KPIs ───────────────────────────────────────────────────────────────────
-n_alto  = int((risco["nivel_risco"] == "alto").sum())
-n_medio = int((risco["nivel_risco"] == "medio").sum())
-n_baixo = int((risco["nivel_risco"] == "baixo").sum())
+# ── Headline situacional ───────────────────────────────────────────────────────
+n_alto  = int((risco["nivel_risco"] == "alto").sum())  if not risco.empty else 0
+n_medio = int((risco["nivel_risco"] == "medio").sum()) if not risco.empty else 0
+n_baixo = int((risco["nivel_risco"] == "baixo").sum()) if not risco.empty else 0
+n_total = len(df_f)
 
+_mask_expo = risco["pct_projetado"].notna() & (risco["pct_projetado"] > 100) if not risco.empty else pd.Series([], dtype=bool)
+_expo_total = float(
+    risco.loc[_mask_expo].apply(lambda r: r["orcamento"] * (r["pct_projetado"] / 100 - 1), axis=1).sum()
+) if _mask_expo.any() else 0.0
+
+if n_alto > 0 and _expo_total > 0:
+    from utils.data_processor import formata_brl_curto as _fbc
+    st.error(
+        f"⚠️ **{n_alto} de {n_total} projeto(s) em risco alto** com exposição de "
+        f"**{_fbc(_expo_total)}** acima do orçamento. Ação recomendada."
+    )
+elif n_alto > 0:
+    st.warning(
+        f"⚠️ **{n_alto} de {n_total} projeto(s) em risco alto** — custo dentro do orçamento, "
+        "mas atenção ao cronograma de marcos."
+    )
+elif n_medio > 0:
+    st.info(
+        f"🟡 {n_medio} projeto(s) em risco médio. "
+        f"{n_baixo} projeto(s) com risco controlado."
+    )
+else:
+    st.success(f"✅ Todos os {n_total} projetos com risco controlado.")
+
+st.markdown("")
+
+# ── 1. KPIs ───────────────────────────────────────────────────────────────────
 c1, c2, c3 = st.columns(3)
-c1.metric("🔴 Alto risco",  str(n_alto))
-c2.metric("🟡 Risco médio", str(n_medio))
-c3.metric("🟢 Baixo risco", str(n_baixo))
+c1.metric("🔴 Alto risco",  str(n_alto),  delta=f"{n_alto} requerem atenção"  if n_alto  > 0 else "Nenhum", delta_color="inverse" if n_alto  > 0 else "off")
+c2.metric("🟡 Risco médio", str(n_medio), delta=f"{n_medio} monitorar"        if n_medio > 0 else "Nenhum", delta_color="inverse" if n_medio > 0 else "off")
+c3.metric("🟢 Baixo risco", str(n_baixo), delta=f"{n_baixo} sob controle"     if n_baixo > 0 else "Nenhum", delta_color="off")
 
 st.divider()
 

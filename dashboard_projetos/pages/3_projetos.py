@@ -303,19 +303,6 @@ with tab_resumo:
     st.divider()
 
     # ── 3.1 — Timeline de Lançamentos do Portfólio ────────────────────────────
-    st.subheader("🗓️ Timeline de Lançamentos")
-    fig_timeline = charts.grafico_timeline_lancamentos(df_f)
-    if fig_timeline.data:
-        st.caption(
-            "◆ previsto · ★ realizado · linha vermelha = hoje. "
-            "O traço pontilhado liga previsto a realizado (verde = no prazo, vermelho = atraso)."
-        )
-        st.plotly_chart(fig_timeline, use_container_width=True, key="timeline_lancamentos")
-    else:
-        st.caption("ℹ️ Nenhum projeto com data de lançamento cadastrada nos filtros atuais.")
-
-    st.divider()
-
     # ── Gantt do Portfólio ────────────────────────────────────────────────────
     st.subheader("📊 Gantt do Portfólio")
     fig_gantt = charts.grafico_gantt_portfolio(df_f)
