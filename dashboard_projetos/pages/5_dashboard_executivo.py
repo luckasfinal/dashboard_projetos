@@ -33,6 +33,9 @@ if df_dashboard.empty:
 
 df_f = render_filtros_sidebar(df_dashboard, df_custos_raw)
 
+if "status_projeto" in df_f.columns:
+    df_f = df_f[df_f["status_projeto"] != "Cancelado"]
+
 projetos_f = df_f["projeto"].unique()
 
 df_custos_f = (

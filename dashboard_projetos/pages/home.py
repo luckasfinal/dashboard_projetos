@@ -30,6 +30,19 @@ hoje = datetime.today().date()
 st.title("🏠 Home Executiva")
 st.caption(f"Visão consolidada do portfólio · {hoje.strftime('%d/%m/%Y')}")
 
+# ── Navegação rápida ──────────────────────────────────────────────────
+n1, n2, n3, n4 = st.columns(4)
+if n1.button("🧭 Visão Executiva",        use_container_width=True, type="secondary"):
+    st.switch_page(str(_ROOT / "pages" / "4_visao_executiva.py"))
+if n2.button("📋 Dashboard Executivo",    use_container_width=True, type="secondary"):
+    st.switch_page(str(_ROOT / "pages" / "5_dashboard_executivo.py"))
+if n3.button("📊 Dashboard Financeiro",   use_container_width=True, type="secondary"):
+    st.switch_page(str(_ROOT / "pages" / "2_dashboard.py"))
+if n4.button("📈 Andamento dos Projetos", use_container_width=True, type="secondary"):
+    st.switch_page(str(_ROOT / "pages" / "3_projetos.py"))
+
+st.divider()
+
 df_dashboard, df_custos_raw, _ = agregar_tudo()
 
 if df_dashboard.empty:
@@ -40,6 +53,9 @@ if df_dashboard.empty:
     st.stop()
 
 render_selo_dados(df_dashboard)
+
+if "status_projeto" in df_dashboard.columns:
+    df_dashboard = df_dashboard[df_dashboard["status_projeto"] != "Cancelado"]
 
 risco = calcular_risco_portfolio(df_dashboard, df_custos_raw)
 kpis  = calcular_kpis_home(df_dashboard, risco)
@@ -152,17 +168,3 @@ s1, s2, s3 = st.columns(3)
 s1.metric("🔴 Alto risco",  kpis["n_alto_risco"])
 s2.metric("🟡 Risco médio", kpis["n_medio_risco"])
 s3.metric("🟢 Baixo risco", kpis["n_baixo_risco"])
-
-st.divider()
-
-# ── Navegação rápida ──────────────────────────────────────────────────
-st.subheader("🔗 Navegação Rápida")
-n1, n2, n3, n4 = st.columns(4)
-if n1.button("🧭 Visão Executiva",      use_container_width=True, type="secondary"):
-    st.switch_page(str(_ROOT / "pages" / "4_visao_executiva.py"))
-if n2.button("📋 Dashboard Executivo",  use_container_width=True, type="secondary"):
-    st.switch_page(str(_ROOT / "pages" / "5_dashboard_executivo.py"))
-if n3.button("📊 Dashboard Financeiro", use_container_width=True, type="secondary"):
-    st.switch_page(str(_ROOT / "pages" / "2_dashboard.py"))
-if n4.button("📈 Andamento dos Projetos", use_container_width=True, type="secondary"):
-    st.switch_page(str(_ROOT / "pages" / "3_projetos.py"))
