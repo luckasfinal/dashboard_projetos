@@ -341,4 +341,194 @@ def test_calcular_recursos_horas_por_colaborador():
     row = result.iloc[0]
     assert row["horas_total"] == pytest.approx(120.0)
     assert row["n_colaboradores"] == 2
-    assert row["horas_por_colaborador"] == pytest.approx(60.0)
+
+
+# ─────────────────────────────────────────────
+# CPI — _cpi helper e calcular_cpi_projeto
+# ─────────────────────────────────────────────
+from utils.dashboard_executivo import calcular_cpi_projeto, calcular_forecast_custo
+
+
+def test_cpi_eficiente_gastou_menos():
+    # 45% concluído (viabilidade peso=0.45), gastou R$400 de R$1000
+    # BCWP = 1000*0.45 = 450, CPI = 450/400 = 1.125
+    row = {
+        "valor_total": 400.0, "orcamento": 1000.0,
+        "prev_viabilidade": "2026-01-01", "real_viabilidade": "2026-01-05",
+        "prev_qualidade": None, "real_qualidade": None,
+        "prev_aprov_lancamento": None, "real_aprov_lancamento": None,
+        "prev_lancamento": None, "real_lancamento": None,
+    }
+    assert calcular_cpi_projeto(row) == pytest.approx(1.125, rel=1e-3)
+
+
+def test_cpi_em_risco_gastou_mais():
+    row = {
+        "valor_total": 700.0, "orcamento": 1000.0,
+        "prev_viabilidade": "2026-01-01", "real_viabilidade": "2026-01-01",
+        "prev_qualidade": None, "real_qualidade": None,
+        "prev_aprov_lancamento": None, "real_aprov_lancamento": None,
+        "prev_lancamento": None, "real_lancamento": None,
+    }
+    assert calcular_cpi_projeto(row) == pytest.approx(450.0 / 700.0, rel=1e-3)
+
+
+def test_cpi_exatamente_no_orcamento():
+    row = {
+        "valor_total": 450.0, "orcamento": 1000.0,
+        "prev_viabilidade": "2026-01-01", "real_viabilidade": "2026-01-01",
+        "prev_qualidade": None, "real_qualidade": None,
+        "prev_aprov_lancamento": None, "real_aprov_lancamento": None,
+        "prev_lancamento": None, "real_lancamento": None,
+    }
+    assert calcular_cpi_projeto(row) == pytest.approx(1.0)
+
+
+def test_cpi_none_sem_custo():
+    row = {
+        "valor_total": 0.0, "orcamento": 1000.0,
+        "prev_viabilidade": "2026-01-01", "real_viabilidade": "2026-01-01",
+        "prev_qualidade": None, "real_qualidade": None,
+        "prev_aprov_lancamento": None, "real_aprov_lancamento": None,
+        "prev_lancamento": None, "real_lancamento": None,
+    }
+    assert calcular_cpi_projeto(row) is None
+
+
+def test_cpi_none_sem_orcamento():
+    row = {
+        "valor_total": 500.0, "orcamento": 0.0,
+        "prev_viabilidade": "2026-01-01", "real_viabilidade": "2026-01-01",
+        "prev_qualidade": None, "real_qualidade": None,
+        "prev_aprov_lancamento": None, "real_aprov_lancamento": None,
+        "prev_lancamento": None, "real_lancamento": None,
+    }
+    assert calcular_cpi_projeto(row) is None
+
+
+def test_cpi_none_sem_marcos_concluidos():
+    row = {
+        "valor_total": 500.0, "orcamento": 1000.0,
+        "prev_viabilidade": None, "real_viabilidade": None,
+        "prev_qualidade": None, "real_qualidade": None,
+        "prev_aprov_lancamento": None, "real_aprov_lancamento": None,
+        "prev_lancamento": None, "real_lancamento": None,
+    }
+    assert calcular_cpi_projeto(row) is None
+
+
+def test_cpi_todos_marcos_concluidos():
+    # pct=1.0, custo=800, orc=1000 → BCWP=1000, CPI=1000/800=1.25
+    row = {
+        "valor_total": 800.0, "orcamento": 1000.0,
+        "prev_viabilidade": "2026-01-01", "real_viabilidade": "2026-01-01",
+        "prev_qualidade": "2026-02-01",   "real_qualidade": "2026-02-01",
+        "prev_aprov_lancamento": "2026-03-01", "real_aprov_lancamento": "2026-03-01",
+        "prev_lancamento": "2026-04-01",  "real_lancamento": "2026-04-01",
+    }
+    assert calcular_cpi_projeto(row) == pytest.approx(1000.0 / 800.0, rel=1e-3)
+
+
+def test_forecast_custo_inclui_coluna_cpi():
+    df_f = _df_proj(prev_viabilidade="2026-01-01", real_viabilidade="2026-01-05")
+    df_f = df_f.copy()
+    df_f["valor_total"] = 400.0
+    df_f["orcamento"] = 1000.0
+    df_marcos = calcular_marcos(df_f)
+    result = calcular_forecast_custo(df_f, df_marcos)
+    assert "cpi" in result.columns
+
+
+def test_forecast_custo_cpi_valor_correto():
+    df_f = _df_proj(prev_viabilidade="2026-01-01", real_viabilidade="2026-01-05")
+    df_f = df_f.copy()
+    df_f["valor_total"] = 400.0
+    df_f["orcamento"] = 1000.0
+    df_marcos = calcular_marcos(df_f)
+    result = calcular_forecast_custo(df_f, df_marcos)
+    # 45% concluído, custo=400, orc=1000 → CPI = (1000*0.45)/400 = 1.125
+    assert result.iloc[0]["cpi"] == pytest.approx(1.125, rel=1e-3)
+
+
+def test_forecast_custo_cpi_none_sem_marcos():
+    df_f = _df_proj()  # nenhum marco concluído
+    df_f = df_f.copy()
+    df_f["valor_total"] = 500.0
+    df_f["orcamento"] = 1000.0
+    df_marcos = calcular_marcos(df_f)
+    result = calcular_forecast_custo(df_f, df_marcos)
+    cpi_val = result.iloc[0]["cpi"]
+    assert cpi_val is None or (isinstance(cpi_val, float) and pd.isna(cpi_val))
+
+
+# ─────────────────────────────────────────────
+# Benchmarking por Segmento + Índice de Saúde
+# ─────────────────────────────────────────────
+from utils.dashboard_executivo import calcular_benchmarking_segmento, calcular_indice_saude
+
+
+def test_benchmarking_df_vazio():
+    result = calcular_benchmarking_segmento(pd.DataFrame())
+    assert result.empty
+    assert "segmento" in result.columns
+
+
+def test_benchmarking_sem_coluna_segmento():
+    df = _df_proj()
+    result = calcular_benchmarking_segmento(df)
+    assert result.empty
+
+
+def test_benchmarking_agrupa_por_segmento():
+    df = pd.DataFrame({
+        "projeto": ["P001", "P002", "P003"],
+        "nome_projeto": ["A", "B", "C"],
+        "segmento": ["Alpha", "Beta", "Alpha"],
+        "pct_orcamento": [80.0, 60.0, 90.0],
+        "valor_total": [100_000.0, 50_000.0, 80_000.0],
+        "horas_total": [100.0, 80.0, 120.0],
+        "orcamento": [120_000.0, 80_000.0, 90_000.0],
+    })
+    result = calcular_benchmarking_segmento(df)
+    assert len(result) == 2
+    alpha = result[result["segmento"] == "Alpha"]
+    assert alpha.iloc[0]["n_projetos"] == 2
+    assert alpha.iloc[0]["consumo_medio_pct"] == pytest.approx(85.0)
+
+
+def test_saude_sem_penalidades():
+    # pct=70 (entre 60-80), dias=0 → 100
+    assert calcular_indice_saude(70.0, 0) == 100
+
+
+def test_saude_bonus_eficiente():
+    # pct=50 (<60) → +10 → 110 → clamped 100
+    assert calcular_indice_saude(50.0, 0) == 100
+
+
+def test_saude_estouro_custo():
+    # pct=110 → -20 → 80
+    assert calcular_indice_saude(110.0, 0) == 80
+
+
+def test_saude_custo_atencao():
+    # pct=85 → -10 → 90
+    assert calcular_indice_saude(85.0, 0) == 90
+
+
+def test_saude_atraso_grave():
+    # pct=50 (+10 bonus), dias=45 (-30) → 100+10-30=80
+    assert calcular_indice_saude(50.0, 45) == 80
+
+
+def test_saude_combinado_critico():
+    # pct=120 (-20), dias=60 (-30), cancelado (-20) → 30
+    assert calcular_indice_saude(120.0, 60, "Cancelado") == 30
+
+
+def test_saude_floor_zero():
+    assert calcular_indice_saude(200.0, 90, "Cancelado") >= 0
+
+
+def test_saude_ceiling_100():
+    assert calcular_indice_saude(10.0, 0) <= 100

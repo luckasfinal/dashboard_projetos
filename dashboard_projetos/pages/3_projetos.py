@@ -17,6 +17,7 @@ from utils.data_processor import (
 )
 from utils.pdf_report import gerar_relatorio_pdf
 from utils import charts
+from utils.dashboard_executivo import calcular_cpi_projeto
 
 init_db()
 
@@ -457,6 +458,22 @@ with tab_detalhe:
     kp4.metric("⏱️ Horas",        f"{row['horas_total']:.0f} h")
     kp5.metric("📐 Custo/h",      formata_brl(row["custo_por_hora"]))
     kp6.metric("👥 Colaboradores", str(int(row.get("n_colaboradores", 0))))
+
+    cpi_val = calcular_cpi_projeto(row)
+    if cpi_val is not None:
+        kp7, _, _ = st.columns(3)
+        kp7.metric(
+            "📊 CPI",
+            f"{cpi_val:.2f}",
+            delta=f"{cpi_val - 1.0:+.2f} vs referência",
+            delta_color="normal",
+            help=(
+                "Cost Performance Index = (Orçamento × % Marcos Concluídos) / Custo Real.\n\n"
+                "**> 1,00** — eficiente: gasta menos que o planejado para o avanço atual\n"
+                "**= 1,00** — exatamente no orçamento\n"
+                "**< 1,00** — em risco: gasta mais que o planejado para o avanço atual"
+            ),
+        )
 
     # Barra de consumo de orçamento
     if row.get("orcamento", 0) > 0:

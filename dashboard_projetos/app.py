@@ -111,6 +111,9 @@ with st.sidebar:
 # O controle de ações (salvar/upload/deletar) é feito dentro de cada página
 # lendo st.session_state["perfil"].
 pages = {
+    "🏠 Início": [
+        st.Page(str(ROOT / "pages" / "home.py"), title="Home Executiva", icon="🏠"),
+    ],
     "📤 Dados": [
         st.Page(str(ROOT / "pages" / "0_orcamento.py"), title="Orçamentos",        icon="📋"),
         st.Page(str(ROOT / "pages" / "1_upload.py"),    title="Upload de Arquivos", icon="📤"),

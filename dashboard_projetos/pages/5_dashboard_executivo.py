@@ -241,9 +241,13 @@ with tab_custos:
     st.divider()
     st.subheader("Forecast de Custo (EAC)")
     df_fc_disp = df_fc.rename(columns={
-        "nome_projeto": "Projeto", "custo_atual": "Custo Atual",
-        "pct_concluido": "% Concluído", "eac": "EAC",
-        "orcamento": "Orçamento", "desvio_eac_pct": "Desvio EAC (%)",
+        "nome_projeto":   "Projeto",
+        "custo_atual":    "Custo Atual",
+        "pct_concluido":  "% Concluído",
+        "eac":            "EAC",
+        "orcamento":      "Orçamento",
+        "desvio_eac_pct": "Desvio EAC (%)",
+        "cpi":            "CPI",
     }).copy()
     df_fc_disp["% Concluído"] = (df_fc_disp["% Concluído"] * 100).round(1)
     st.dataframe(
@@ -257,7 +261,14 @@ with tab_custos:
                 format="%.0f%%", min_value=0, max_value=100
             ),
             "Desvio EAC (%)": st.column_config.NumberColumn(format="%.1f%%"),
+            "CPI":            st.column_config.NumberColumn(format="%.2f"),
         },
+    )
+    st.caption(
+        "**CPI (Cost Performance Index):** "
+        "> 1,00 = eficiente (gasta menos que o planejado) · "
+        "= 1,00 = exatamente no orçamento · "
+        "< 1,00 = em risco de custo"
     )
 
 # ── TAB 4: ESTRATÉGICO ────────────────────────────────────────────────────────
