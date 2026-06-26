@@ -102,6 +102,30 @@ hoje    = datetime.today().date()
 # ── Selo de confiança: atualização + completude (recorte filtrado) ────────────
 render_selo_dados(df_f)
 
+# ── Headline situacional ───────────────────────────────────────────────────────
+_n_total    = len(df_f)
+_n_atrasado = int((df_f["status_projeto"] == "Atrasado").sum()) if "status_projeto" in df_f.columns else 0
+_n_standby  = int((df_f["status_projeto"] == "Stand by").sum()) if "status_projeto" in df_f.columns else 0
+_pct_med    = float(df_f["pct_concluido"].mean() * 100) if "pct_concluido" in df_f.columns else 0
+
+if _n_atrasado > 0:
+    st.error(
+        f"⚠️ **{_n_atrasado} de {_n_total} projeto(s) com lançamento atrasado.** "
+        "Abra o projeto para revisar os marcos críticos."
+    )
+elif _n_standby > 0:
+    st.warning(
+        f"⏸️ **{_n_standby} projeto(s) em Stand by** · "
+        f"conclusão média dos demais: **{_pct_med:.0f}%**."
+    )
+else:
+    st.success(
+        f"✅ Todos os {_n_total} projetos dentro do prazo · "
+        f"conclusão média do portfólio: **{_pct_med:.0f}%**."
+    )
+
+st.markdown("")
+
 # ── Helpers de data ───────────────────────────────────────────────────────────
 def _parse(val):
     if not val or str(val) in ("0", "None", "nan", ""): return None
@@ -303,16 +327,14 @@ with tab_resumo:
     st.divider()
 
     # ── 3.1 — Timeline de Lançamentos do Portfólio ────────────────────────────
-    st.subheader("🗓️ Timeline de Lançamentos")
-    fig_timeline = charts.grafico_timeline_lancamentos(df_f)
-    if fig_timeline.data:
-        st.caption(
-            "◆ previsto · ★ realizado · linha vermelha = hoje. "
-            "O traço pontilhado liga previsto a realizado (verde = no prazo, vermelho = atraso)."
-        )
-        st.plotly_chart(fig_timeline, use_container_width=True, key="timeline_lancamentos")
+    # ── Gantt do Portfólio ────────────────────────────────────────────────────
+    st.subheader("📊 Gantt do Portfólio")
+    fig_gantt = charts.grafico_gantt_portfolio(df_f)
+    if fig_gantt is not None:
+        st.caption("Barras de data de início até lançamento previsto/realizado, coloridas por status.")
+        st.plotly_chart(fig_gantt, use_container_width=True, key="gantt_portfolio")
     else:
-        st.caption("ℹ️ Nenhum projeto com data de lançamento cadastrada nos filtros atuais.")
+        st.caption("ℹ️ Nenhum projeto com datas de início e lançamento cadastradas.")
 
     st.divider()
 
@@ -321,6 +343,17 @@ with tab_resumo:
     st.plotly_chart(charts.grafico_horas_por_projeto(df_f),
                     use_container_width=True, key="horas_por_projeto_resumo")
     aviso_truncamento(len(df_f))
+
+    st.divider()
+
+    # ── Top colaboradores por horas ───────────────────────────────────────────
+    st.subheader("👥 Top Colaboradores por Horas")
+    df_h_resumo = df_horas_raw[df_horas_raw["c_custo"].isin(df_f["projeto"])] if not df_horas_raw.empty else df_horas_raw
+    if not df_h_resumo.empty:
+        st.plotly_chart(charts.grafico_top_colaboradores(df_h_resumo, top_n=10),
+                        use_container_width=True, key="top_colaboradores")
+    else:
+        st.caption("ℹ️ Sem dados de horas para os filtros atuais.")
 
     st.divider()
 

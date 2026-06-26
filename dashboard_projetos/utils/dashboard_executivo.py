@@ -523,3 +523,54 @@ def calcular_indice_saude(
     if 0 < pct_orcamento < 60:
         score += 10
     return max(0, min(100, score))
+
+
+# ─────────────────────────────────────────────
+# Saúde do Portfólio
+# ─────────────────────────────────────────────
+
+def calcular_saude_portfolio(df_f: pd.DataFrame, risco: pd.DataFrame) -> pd.DataFrame:
+    """Índice de saúde (0–100) para cada projeto. Combina pct_projetado + dias_atraso do risco."""
+    if df_f.empty:
+        return pd.DataFrame(columns=["projeto", "nome_projeto", "saude", "classificacao"])
+    base = df_f[["projeto", "nome_projeto"]].copy()
+    base["status_projeto"] = df_f["status_projeto"].fillna("") if "status_projeto" in df_f.columns else ""
+    if not risco.empty and "projeto" in risco.columns:
+        cols_r = [c for c in ["projeto", "pct_projetado", "dias_atraso_max"] if c in risco.columns]
+        base = base.merge(risco[cols_r].drop_duplicates("projeto"), on="projeto", how="left")
+    if "pct_projetado"  not in base.columns: base["pct_projetado"]  = 0.0
+    if "dias_atraso_max" not in base.columns: base["dias_atraso_max"] = 0
+    base["pct_projetado"]   = base["pct_projetado"].fillna(0.0)
+    base["dias_atraso_max"] = base["dias_atraso_max"].fillna(0).astype(int)
+    base["saude"] = base.apply(
+        lambda r: calcular_indice_saude(
+            float(r["pct_projetado"]), int(r["dias_atraso_max"]), str(r["status_projeto"])
+        ),
+        axis=1,
+    )
+    base["classificacao"] = base["saude"].apply(
+        lambda s: "🟢 Saudável" if s >= 80 else ("🟡 Atenção" if s >= 50 else "🔴 Crítico")
+    )
+    return base.sort_values("saude", ascending=False).reset_index(drop=True)
+
+
+def calcular_burn_rate_tendencia(df_br: pd.DataFrame) -> dict:
+    """
+    Média dos últimos 3 meses de burn rate e delta vs 3 meses anteriores.
+    Retorna {'media_3m': float, 'delta_pct': float|None, 'tendencia': '↑'|'↓'|'→'}
+    """
+    if df_br.empty or "mes_ref" not in df_br.columns or "custo_mensal" not in df_br.columns:
+        return {"media_3m": 0.0, "delta_pct": None, "tendencia": "→"}
+    por_mes  = df_br.groupby("mes_ref")["custo_mensal"].sum().sort_index()
+    media_3m = float(por_mes.tail(3).mean())
+    if len(por_mes) < 4:
+        return {"media_3m": media_3m, "delta_pct": None, "tendencia": "→"}
+    anteriores = por_mes.iloc[-6:-3] if len(por_mes) >= 6 else por_mes.iloc[:-3]
+    if anteriores.empty:
+        return {"media_3m": media_3m, "delta_pct": None, "tendencia": "→"}
+    media_ant = float(anteriores.mean())
+    if media_ant == 0:
+        return {"media_3m": media_3m, "delta_pct": None, "tendencia": "→"}
+    delta_pct = (media_3m - media_ant) / media_ant * 100
+    tendencia = "↑" if delta_pct > 2 else ("↓" if delta_pct < -2 else "→")
+    return {"media_3m": media_3m, "delta_pct": delta_pct, "tendencia": tendencia}

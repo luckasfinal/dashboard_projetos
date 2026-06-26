@@ -60,19 +60,55 @@ if "status_projeto" in df_dashboard.columns:
 risco = calcular_risco_portfolio(df_dashboard, df_custos_raw)
 kpis  = calcular_kpis_home(df_dashboard, risco)
 
+# ── Headline situacional ──────────────────────────────────────────────
+n_risco = kpis["n_alto_risco"]
+expo    = kpis["exposicao_financeira"]
+atraso  = kpis["atraso_medio_dias"]
+n_proj  = kpis["n_ativos"]
+
+if n_risco > 0 and expo > 0:
+    st.error(
+        f"⚠️ **{n_risco} de {n_proj} projeto(s) em risco alto** "
+        f"com exposição financeira de **{formata_brl_curto(expo)}**. "
+        "Revisão recomendada antes do próximo ciclo de acompanhamento."
+    )
+elif n_risco > 0:
+    st.warning(
+        f"⚠️ **{n_risco} de {n_proj} projeto(s) em risco alto** — "
+        "sem estouro financeiro projetado, mas atenção ao cronograma."
+    )
+elif atraso > 7:
+    st.warning(
+        f"🕐 Sem projetos em risco crítico, mas atraso médio de "
+        f"**{atraso:.0f} dias** nos marcos em aberto."
+    )
+else:
+    st.success(
+        f"✅ Portfólio em boa situação — {n_proj} projetos ativos, "
+        "nenhum em risco alto."
+    )
+
+st.markdown("")
+
 # ── KPIs ──────────────────────────────────────────────────────────────
 c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("📁 Projetos", kpis["n_ativos"])
+c1.metric(
+    "📁 Projetos ativos",
+    kpis["n_ativos"],
+    help="Total de projetos não cancelados nos filtros atuais.",
+)
 c2.metric(
     "🔴 Em risco alto",
     kpis["n_alto_risco"],
+    delta=f"{kpis['n_alto_risco']} requerem atenção" if kpis["n_alto_risco"] > 0 else "Nenhum",
+    delta_color="inverse" if kpis["n_alto_risco"] > 0 else "off",
     help="Projetos com projeção de custo acima do orçamento ou com atraso em algum marco.",
 )
 c3.metric(
     "💸 Exposição financeira",
-    formata_brl_curto(kpis["exposicao_financeira"])
-    if kpis["exposicao_financeira"] > 0
-    else "R$ 0",
+    formata_brl_curto(expo) if expo > 0 else "R$ 0",
+    delta="Estouro projetado" if expo > 0 else "Dentro do orçamento",
+    delta_color="inverse" if expo > 0 else "off",
     help="Soma dos valores projetados de estouro de orçamento nos projetos em risco.",
 )
 c4.metric(
@@ -82,7 +118,9 @@ c4.metric(
 )
 c5.metric(
     "⏰ Atraso médio",
-    f"{kpis['atraso_medio_dias']:.0f} d",
+    f"{atraso:.0f} d",
+    delta=f"{atraso:.0f}d nos marcos" if atraso > 0 else "No prazo",
+    delta_color="inverse" if atraso > 0 else "off",
     help="Média de dias de atraso no marco mais crítico de cada projeto em risco.",
 )
 
@@ -100,8 +138,6 @@ if exc.get("atrasados"):
     cartoes.append(("⏰", len(exc["atrasados"]), "com lançamento atrasado", "#f59e0b"))
 if exc.get("stand_by"):
     cartoes.append(("⏸️", len(exc["stand_by"]), "em Stand by", "#a78bfa"))
-if exc.get("cancelados"):
-    cartoes.append(("✖️", len(exc["cancelados"]), "cancelados", "#94a3b8"))
 
 if not cartoes:
     st.success("✅ Nenhuma exceção detectada — todos os projetos dentro do previsto.")
@@ -159,12 +195,3 @@ if df_venc.empty:
     st.success("✅ Nenhum marco com data passada sem conclusão registrada.")
 else:
     st.dataframe(df_venc, use_container_width=True, hide_index=True)
-
-st.divider()
-
-# ── Saúde do portfólio ────────────────────────────────────────────────
-st.subheader("🎯 Saúde do Portfólio")
-s1, s2, s3 = st.columns(3)
-s1.metric("🔴 Alto risco",  kpis["n_alto_risco"])
-s2.metric("🟡 Risco médio", kpis["n_medio_risco"])
-s3.metric("🟢 Baixo risco", kpis["n_baixo_risco"])

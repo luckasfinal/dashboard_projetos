@@ -651,3 +651,168 @@ def grafico_matriz_executiva(df_matriz: pd.DataFrame) -> go.Figure:
         hovermode="closest",
     )
     return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Gantt do Portfólio (A5)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def grafico_gantt_portfolio(df_f: pd.DataFrame) -> "go.Figure | None":
+    """Gantt horizontal: uma barra por projeto de data_inicio a prev/real_lancamento."""
+    import plotly.express as px
+
+    def _pd(v):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return None
+        try:
+            return pd.Timestamp(str(v))
+        except Exception:
+            return None
+
+    linhas = []
+    for _, row in df_f.iterrows():
+        ini = _pd(row.get("data_inicio"))
+        fim = _pd(row.get("real_lancamento")) or _pd(row.get("prev_lancamento"))
+        if ini is None or fim is None:
+            continue
+        if fim < ini:
+            fim = ini + pd.Timedelta(days=1)
+        nome   = str(row.get("nome_projeto") or row.get("projeto") or "")[:40]
+        status = str(row.get("status_projeto") or "—").strip()
+        linhas.append({"Projeto": nome, "Início": ini, "Fim": fim, "Status": status})
+
+    if not linhas:
+        return None
+
+    df_g = pd.DataFrame(linhas).sort_values("Início")
+
+    _cores = {
+        "CC criado": "#4C78A8", "Viabilizado": "#54A24B",
+        "Em desenvolvimento": "#E45756", "Em lançamento": "#F58518",
+        "Lançado": "#72B7B2", "Stand by": "#B279A2",
+        "Cancelado": "#BAB0AC", "—": "#9ecae1",
+    }
+
+    fig = px.timeline(
+        df_g, x_start="Início", x_end="Fim", y="Projeto",
+        color="Status", color_discrete_map=_cores,
+        title="<b>Gantt do Portfólio</b>",
+    )
+    fig.update_yaxes(autorange="reversed")
+    fig.add_vline(
+        x=str(date.today()), line_dash="dot",
+        line_color="rgba(255,200,0,.7)",
+        annotation_text="Hoje", annotation_position="top right",
+        annotation_font_size=10,
+    )
+    fig.update_layout(
+        **LAYOUT_BASE, margin=_MARGIN, legend=_LEGEND_H,
+        height=max(320, len(df_g) * 28 + 80),
+        xaxis_title="",
+    )
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Top Colaboradores por Horas (B1)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def grafico_top_colaboradores(df_horas: pd.DataFrame, top_n: int = 10) -> go.Figure:
+    """Bar chart horizontal dos top N colaboradores por horas normais."""
+    if df_horas.empty or "nome" not in df_horas.columns or "hs_nor" not in df_horas.columns:
+        return go.Figure()
+    df_top = (
+        df_horas.groupby("nome")["hs_nor"].sum()
+        .nlargest(top_n).reset_index()
+        .sort_values("hs_nor")
+    )
+    fig = go.Figure(go.Bar(
+        x=df_top["hs_nor"], y=df_top["nome"],
+        orientation="h",
+        marker_color="#4C78A8", marker_line_width=0,
+        text=[f"{v:.0f} h" for v in df_top["hs_nor"]],
+        textposition="outside",
+        hovertemplate="<b>%{y}</b><br>Horas: %{x:.0f}<extra></extra>",
+    ))
+    fig.update_layout(
+        **LAYOUT_BASE,
+        title=f"<b>Top {min(top_n, len(df_top))} Colaboradores por Horas</b>",
+        margin=_MARGIN,
+        xaxis=dict(title="Horas Normais", gridcolor="rgba(128,128,128,.15)"),
+        yaxis=dict(title=""),
+        height=max(300, len(df_top) * 30 + 80),
+    )
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Benchmarking por Segmento (B2)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def grafico_benchmarking_segmento(df_bench: pd.DataFrame) -> go.Figure:
+    """Dual-axis: custo total por segmento (barras) + consumo médio de orçamento (linha)."""
+    if df_bench.empty:
+        return go.Figure()
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        name="Custo Total",
+        x=df_bench["segmento"], y=df_bench["custo_total"],
+        marker_color="#4C78A8", marker_line_width=0,
+        yaxis="y",
+        hovertemplate="<b>%{x}</b><br>Custo: R$ %{y:,.0f}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        name="Consumo Médio (%)",
+        x=df_bench["segmento"], y=df_bench["consumo_medio_pct"],
+        mode="markers+lines", yaxis="y2",
+        marker=dict(size=10, color="#E45756"),
+        line=dict(color="#E45756", width=2),
+        hovertemplate="<b>%{x}</b><br>Consumo médio: %{y:.1f}%<extra></extra>",
+    ))
+    fig.update_layout(
+        **LAYOUT_BASE,
+        title="<b>Benchmarking por Segmento</b>",
+        margin=_MARGIN, legend=_LEGEND_H,
+        yaxis=dict(
+            title="Custo Total (R$)", tickprefix="R$ ", tickformat=",.0f",
+            gridcolor="rgba(128,128,128,.15)",
+        ),
+        yaxis2=dict(
+            title="Consumo Médio (%)", overlaying="y", side="right",
+            ticksuffix="%", showgrid=False,
+        ),
+    )
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Índice de Saúde do Portfólio (B3 / B7)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def grafico_saude_portfolio(df_saude: pd.DataFrame) -> go.Figure:
+    """Bar chart horizontal com índice de saúde por projeto (verde/amarelo/vermelho)."""
+    if df_saude.empty:
+        return go.Figure()
+    df_plot = df_saude.sort_values("saude").tail(LIMITE_GRAFICO)
+    cores = [
+        "#dc2626" if s < 50 else ("#f59e0b" if s < 80 else "#22c55e")
+        for s in df_plot["saude"]
+    ]
+    nomes = df_plot.get("nome_projeto", df_plot.get("projeto", pd.Series(dtype=str)))
+    fig = go.Figure(go.Bar(
+        x=df_plot["saude"], y=nomes,
+        orientation="h",
+        marker_color=cores, marker_line_width=0,
+        text=[str(s) for s in df_plot["saude"]],
+        textposition="outside",
+        hovertemplate="<b>%{y}</b><br>Índice de Saúde: %{x}<extra></extra>",
+    ))
+    fig.update_layout(
+        **LAYOUT_BASE,
+        title="<b>Índice de Saúde do Portfólio</b>",
+        margin=_MARGIN,
+        xaxis=dict(range=[0, 115], gridcolor="rgba(128,128,128,.15)"),
+        yaxis=dict(title=""),
+        height=max(300, len(df_plot) * 28 + 80),
+    )
+    return fig
