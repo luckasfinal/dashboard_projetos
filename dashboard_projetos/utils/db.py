@@ -182,6 +182,22 @@ def init_db() -> None:
         """))
 
 
+# Whitelists para o ALTER TABLE dinâmico — impede SQL injection caso o código
+# seja modificado inadvertidamente no futuro.
+_TABELAS_PERMITIDAS = {"custos", "horas", "orcamentos_cronograma"}
+_TIPOS_PERMITIDOS   = {"TEXT", "DOUBLE PRECISION", "INTEGER"}
+
+
+def _validar_identificador_sql(tabela: str, col: str, tipo: str) -> None:
+    """Levanta ValueError se algum dos valores não estiver na lista branca."""
+    if tabela not in _TABELAS_PERMITIDAS:
+        raise ValueError(f"Tabela não permitida para migração: {tabela!r}")
+    if not col.replace("_", "").isalnum():
+        raise ValueError(f"Nome de coluna inválido: {col!r}")
+    if tipo not in _TIPOS_PERMITIDOS:
+        raise ValueError(f"Tipo SQL não permitido: {tipo!r}")
+
+
 def migrar_db() -> None:
     """Migração não-destrutiva: adiciona colunas novas sem apagar dados."""
     with _engine().begin() as con:
@@ -202,6 +218,7 @@ def migrar_db() -> None:
             for col in colunas:
                 if col not in existentes:
                     tipo = tipos.get(col, "TEXT")
+                    _validar_identificador_sql(tabela, col, tipo)
                     con.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {col} {tipo}"))
 
 
