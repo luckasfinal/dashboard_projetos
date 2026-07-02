@@ -397,9 +397,12 @@ st.subheader(f"📊 Resumo — {cc_selecionado} / {nome_exibicao}")
 
 dados_atuais = carregar_orcamento_projeto(cc_selecionado)
 if dados_atuais:
-    orc_prev = float(dados_atuais.get("orcamento_previsto") or 0)
-    saldo    = orc_prev - realizado_proj
-    pct      = (realizado_proj / orc_prev * 100) if orc_prev > 0 else 0
+    orc_prev     = float(dados_atuais.get("orcamento_previsto") or 0)
+    df_prev_proj = carregar_previsoes_projeto(cc_selecionado)
+    total_prev   = float(df_prev_proj["valor"].sum()) if not df_prev_proj.empty else 0.0
+    orc_efetivo  = orc_prev + total_prev
+    saldo        = orc_efetivo - realizado_proj
+    pct          = (realizado_proj / orc_efetivo * 100) if orc_efetivo > 0 else 0
 
     status_atual = dados_atuais.get("status_projeto") or STATUS_DEFAULT
     st.markdown(
@@ -408,7 +411,15 @@ if dados_atuais:
     )
 
     col_a, col_b, col_c = st.columns(3)
-    col_a.metric("Orçamento Previsto", formata_brl(orc_prev))
+    if total_prev > 0:
+        col_a.metric(
+            "Orçamento Total",
+            formata_brl(orc_efetivo),
+            delta=f"Base {formata_brl(orc_prev)} + Previsões {formata_brl(total_prev)}",
+            delta_color="off",
+        )
+    else:
+        col_a.metric("Orçamento Previsto", formata_brl(orc_prev))
     col_b.metric("Realizado (custos)", formata_brl(realizado_proj))
     col_c.metric("Saldo", formata_brl(saldo), delta=f"{pct:.1f}% consumido", delta_color="inverse")
 

@@ -122,7 +122,7 @@ if exc["n_estouro"] > 0:
         f"⚠️ **{exc['n_estouro']} projeto(s) acima do orçamento** com excedente de "
         f"**{formata_brl_curto(exc['excedente_total'])}**. Revise os custos antes do próximo ciclo."
     )
-elif pct_consumido is not None and pct_consumido > 90:
+elif pct_consumido is not None and pct_consumido > 80:
     st.warning(
         f"🟡 Portfólio com **{pct_consumido:.0f}%** do orçamento consumido — "
         "fique atento ao ritmo de gastos para os próximos meses."
@@ -214,8 +214,7 @@ def _cor_pct(val):
     except Exception:
         return ""
     if v > 100: return "background-color:#7f1d1d;color:#fca5a5;font-weight:bold"
-    if v >= 90: return "background-color:#7c2d12;color:#fdba74"
-    if v >= 70: return "background-color:#713f12;color:#fde68a"
+    if v >= 80: return "background-color:#7c2d12;color:#fdba74"
     return "background-color:#14532d;color:#86efac"
 
 styler = tabela.style.format(fmt)

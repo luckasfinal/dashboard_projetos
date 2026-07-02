@@ -107,26 +107,27 @@ with st.sidebar:
             "Passe o mouse sobre os indicadores para ver o **valor exato**."
         )
 
-# ── Páginas — visíveis para ambos os perfis ───────────────────────────────────
-# O controle de ações (salvar/upload/deletar) é feito dentro de cada página
-# lendo st.session_state["perfil"].
+# ── Páginas — visíveis conforme perfil ────────────────────────────────────────
+# Dados (Orçamentos + Upload) visíveis apenas para admin.
+# Visualizador acessa apenas leitura: Home, Relatórios e Análises.
 pages = {
     "🏠 Início": [
         st.Page(str(ROOT / "pages" / "home.py"), title="Home Executiva", icon="🏠"),
     ],
-    "📤 Dados": [
+}
+if admin:
+    pages["📤 Dados"] = [
         st.Page(str(ROOT / "pages" / "0_orcamento.py"), title="Orçamentos",        icon="📋"),
         st.Page(str(ROOT / "pages" / "1_upload.py"),    title="Upload de Arquivos", icon="📤"),
-    ],
-    "🎯 Relatórios Executivos": [
-        st.Page(str(ROOT / "pages" / "4_visao_executiva.py"),     title="Visão Executiva",     icon="🧭"),
-        st.Page(str(ROOT / "pages" / "5_dashboard_executivo.py"), title="Dashboard Executivo", icon="📋"),
-    ],
-    "📊 Análises": [
-        st.Page(str(ROOT / "pages" / "2_dashboard.py"), title="Dashboard Financeiro",   icon="📊"),
-        st.Page(str(ROOT / "pages" / "3_projetos.py"),  title="Andamento dos Projetos", icon="📈"),
-    ],
-}
+    ]
+pages["🎯 Relatórios Executivos"] = [
+    st.Page(str(ROOT / "pages" / "4_visao_executiva.py"),     title="Visão Executiva",     icon="🧭"),
+    st.Page(str(ROOT / "pages" / "5_dashboard_executivo.py"), title="Dashboard Executivo", icon="📋"),
+]
+pages["📊 Análises"] = [
+    st.Page(str(ROOT / "pages" / "2_dashboard.py"), title="Dashboard Financeiro",   icon="📊"),
+    st.Page(str(ROOT / "pages" / "3_projetos.py"),  title="Andamento dos Projetos", icon="📈"),
+]
 
 pg = st.navigation(pages)
 pg.run()

@@ -48,6 +48,7 @@ from utils.db import (
     listar_importacoes, STATUS_OPCOES, STATUS_DEFAULT,
     salvar_custos, salvar_horas,
     salvar_orcamento, carregar_orcamento_projeto, salvar_previsao_periodo,
+    carregar_todas_previsoes,
 )
 import re
 
@@ -516,8 +517,22 @@ def agregar_tudo() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     else:
         merged["status_projeto"] = STATUS_DEFAULT
 
-    # Compatibilidade: mantém 'orcamento' apontando para orcamento_previsto
-    merged["orcamento"] = merged["orcamento_previsto"]
+    # Orçamento efetivo = base (orcamento_previsto) + soma das previsoes_periodo
+    merged["orcamento_previsto"] = pd.to_numeric(merged["orcamento_previsto"], errors="coerce").fillna(0)
+    df_prev = carregar_todas_previsoes()
+    if not df_prev.empty and "projeto" in df_prev.columns and "valor" in df_prev.columns:
+        prev_sum = (
+            df_prev.groupby("projeto")["valor"].sum()
+            .reset_index(name="orcamento_previsoes")
+        )
+        prev_sum["projeto"] = prev_sum["projeto"].astype(str).str.strip()
+        merged = merged.merge(prev_sum, on="projeto", how="left")
+        merged["orcamento_previsoes"] = pd.to_numeric(
+            merged["orcamento_previsoes"], errors="coerce"
+        ).fillna(0.0)
+    else:
+        merged["orcamento_previsoes"] = 0.0
+    merged["orcamento"] = merged["orcamento_previsto"] + merged["orcamento_previsoes"]
 
     merged["custo_por_hora"] = merged.apply(
         lambda r: r["valor_total"] / r["horas_total"] if r["horas_total"] > 0 else 0, axis=1
@@ -812,7 +827,7 @@ def render_faixa_alertas(df: pd.DataFrame) -> None:
 def cor_status(pct: float) -> str:
     if pct > 100:
         return "🚨"
-    if pct >= 90:
+    if pct >= 80:
         return "🟡"
     return "🟢"
 
@@ -897,7 +912,8 @@ def agrupar_por_nome_projeto(df: pd.DataFrame) -> pd.DataFrame:
         c for c in df.columns
         if c not in colunas_soma
         and c not in ("_nome_limpo", "nome_projeto", "projeto",
-                       "custo_por_hora", "pct_orcamento", "saldo_orcamento")
+                       "custo_por_hora", "pct_orcamento", "saldo_orcamento",
+                       "orcamento_previsoes")
     ]
 
     agg_dict = {c: "sum" for c in colunas_soma}
